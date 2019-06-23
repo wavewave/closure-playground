@@ -4,6 +4,7 @@ with pkgs;
 
 let
   hsenv = haskellPackages.ghcWithPackages (p: with p; [
+    containers
     distributed-closure
     network-simple
     monad-loops

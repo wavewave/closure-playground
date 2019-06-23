@@ -21,6 +21,7 @@ import Control.Distributed.Closure ( Closure
                                    )
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
+import Control.Monad.Trans.Class (lift)
 import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
@@ -32,18 +33,8 @@ import Network.Simple.TCP ( HostPreference(Host)
 import System.Environment (getArgs)
 import System.Random (randomIO)
 --
-import Comm (RPort(..),SPort(..),receiveChan,sendChan)
+import Comm (RPort(..),SPort(..),receiveChan,sendChan,runManaged)
 
-{-
--- | An instruction to the server.
-data Instruction
-  = CallClosure (Closure (Int -> Int)) Int
-    -- ^ @CallClosure cl arg@
-    --
-    -- Apply the closure @cl@ to @arg@.
-  deriving Generic
-instance Binary Instruction
--}
 
 data Request a b = Request (Closure (a -> b)) a
                    deriving (Generic, Typeable)
@@ -74,14 +65,14 @@ slave :: IO ()
 slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
-    forever $ do
-    let rport_req = RPort sock
-        sport_ans = SPort sock
-    forever $ do
-      req :: Request Int Int <- receiveChan rport_req
-      mr <- handleRequest req
-      putStrLn $ "request handled with answer: " ++ show mr
-      sendChan sport_ans mr
+    runManaged sock $ do
+      forever $ do
+        let rport_req = RPort sock
+            sport_ans = SPort sock
+        req :: Request Int Int <- receiveChan rport_req
+        mr <- lift $ handleRequest req
+        lift $ putStrLn $ "request handled with answer: " ++ show mr
+        sendChan sport_ans mr
 
 
 master :: IO ()
@@ -89,20 +80,21 @@ master = do
   connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
-    let sport_req = SPort sock
-        rport_ans = RPort sock
-    ------
-    replicateM_ 3 $ do
-      h <- randomIO
-      putStrLn $ "h = " ++ show h
-      let hidden = SI h
-          c = static (\(SI a) b -> a + b)
-            `staticMap` cpure closureDict hidden
-          req = (c,4::Int)
-      putStrLn "sending req"
-      sendChan sport_req req
-      mans :: Maybe Int <- receiveChan rport_ans
-      putStrLn $ "get ans = " ++ show mans
+    runManaged sock $ do
+      let sport_req = SPort sock
+          rport_ans = RPort sock
+      ------
+      replicateM_ 3 $ do
+        h <- lift $ randomIO
+        lift $ putStrLn $ "h = " ++ show h
+        let hidden = SI h
+            c = static (\(SI a) b -> a + b)
+              `staticMap` cpure closureDict hidden
+            req = (c,4::Int)
+        lift $ putStrLn "sending req"
+        sendChan sport_req req
+        mans :: Maybe Int <- receiveChan rport_ans
+        lift $ putStrLn $ "get ans = " ++ show mans
 
 
 main :: IO ()
