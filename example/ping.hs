@@ -17,9 +17,11 @@ import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever)
 import Control.Monad.Loops (whileJust_)
 import Data.Binary (Binary,decode,decodeOrFail,encode)
-import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import Network.Simple.TCP (HostPreference(Host), connect, recv, send, serve)
@@ -57,10 +59,10 @@ handleInstruction (CallClosure cl input) =
   return $ Just $ fun input
 
 -- | Channel to which a client will send its request.
-type ServerChan = Chan (BSL.ByteString, ResponseChan)
+type ServerChan = Chan (BL.ByteString, ResponseChan)
 
 -- | Channel to which the server will send its response.
-type ResponseChan = Chan BSL.ByteString
+type ResponseChan = Chan BL.ByteString
 
 -- | Execute an action with a concurrent server thread.
 --
@@ -122,6 +124,12 @@ main' = withServer $ \serverChan -> do
     writeChan serverChan (request, clientChan)
     result <- decode <$> readChan clientChan
     putStrLn $ "3 + 4 = " ++ show (result :: Maybe Int)
+
+-- | simple variable length message protocol
+data Msg = Msg { msgSize :: Word32
+               , msgPayload :: B.ByteString
+               }
+
 
 server :: IO ()
 server = do
