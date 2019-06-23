@@ -12,13 +12,10 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (withAsync)
-import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
 import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
 import Control.Distributed.Closure.TH (withStatic)
-import Control.Monad (forever) --  replicateM_
-import Data.Binary (Binary,decode,decodeOrFail,encode)
-import qualified Data.ByteString.Lazy as BL
+import Control.Monad (forever, replicateM_)
+import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
@@ -28,7 +25,7 @@ import Network.Simple.TCP ( HostPreference(Host)
                           , serve
                           )
 import System.Environment (getArgs)
--- import System.Random (randomIO)
+import System.Random (randomIO)
 --
 import Comm (RPort(..),SPort(..),receiveChan,sendChan)
 
@@ -84,28 +81,44 @@ slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     forever $ do
-    let rport = RPort sock
+    let rport_req = RPort sock
+        sport_ans = SPort sock
     forever $ do
-      req <- receiveChan rport
+      req <- receiveChan rport_req
       mr <- handleInstruction req
-      print mr
+      putStrLn $ "request handled with answer: " ++ show mr
+      sendChan sport_ans mr
+
 
 master :: IO ()
 master = do
   connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
-    let sport = SPort sock
+    let sport_req = SPort sock
+        rport_ans = RPort sock
     ------
-    let fun = staticKey $ static double
-        req1 = CallStatic fun 4
-    sendChan sport req1
-    ------
-    let three = SI 3
-        c = static (\(SI a) b -> a + b)
-          `staticMap` cpure closureDict three
-        req2 = CallClosure c 4
-    sendChan sport req2
+
+    replicateM_ 3 $ do
+      p <- randomIO
+      putStrLn $ "p = " ++ show p
+      let fun = staticKey $ static double
+          req1 = CallStatic fun p
+      putStrLn "sending req1"
+      sendChan sport_req req1
+      mans1 :: Maybe Int <- receiveChan rport_ans
+      putStrLn $ "get ans1 = " ++ show mans1
+      ------
+      h <- randomIO
+      putStrLn $ "h = " ++ show h
+      let hidden = SI h
+          c = static (\(SI a) b -> a + b)
+            `staticMap` cpure closureDict hidden
+          req2 = CallClosure c 4
+      putStrLn "sending req2"
+      sendChan sport_req req2
+      mans2 :: Maybe Int <- receiveChan rport_ans
+      putStrLn $ "get ans2 = " ++ show mans2
 
 
 main :: IO ()
