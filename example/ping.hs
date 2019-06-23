@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -172,14 +173,21 @@ sendMsg sock (Msg sz pl) = do
   send sock pl
 
 
-
 sendChan :: (Binary a) => SPort a -> a -> IO ()
 sendChan (SPort sock) x = sendMsg sock (toMsg x)
 
 
-receiveChan :: (Binary a) => RPort a -> IO (Maybe a)
-receiveChan (RPort sock) = fmap (fmap fromMsg) (recvMsg sock)
+receiveChan :: (Binary a) => RPort a -> IO a
+receiveChan rp@(RPort sock) =
+  recvMsg sock >>= \case
+    Nothing ->
+      -- for now, we do this forever. later, we should wrap bare IO by
+      -- managed network process, so Nothing case redirects to disconnect
+      -- callback.
+      threadDelay 1000000 >> receiveChan rp
 
+    Just msg ->
+      pure (fromMsg msg)
 
 server :: IO ()
 server = do
@@ -187,7 +195,8 @@ server = do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     forever $ do
     let rport = RPort sock
-    whileJust_  (receiveChan rport) $ \(x :: Int) ->
+    forever $ do
+      x <- receiveChan rport :: IO Int
       print x
 
 
