@@ -19,7 +19,6 @@ import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import Network.Simple.TCP ( HostPreference(Host)
                           , connect
                           , serve
@@ -32,11 +31,7 @@ import Comm (RPort(..),SPort(..),receiveChan,sendChan)
 
 -- | An instruction to the server.
 data Instruction
-  = CallStatic StaticKey Int
-    -- ^ @CallStatic skFun arg@
-    --
-    -- Apply the function behind the 'StaticKey' @skFun@ to @arg@.
-  | CallClosure (Closure (Int -> Int)) Int
+  = CallClosure (Closure (Int -> Int)) Int
     -- ^ @CallClosure cl arg@
     --
     -- Apply the closure @cl@ to @arg@.
@@ -50,13 +45,6 @@ instance Binary Instruction
 --
 -- This is also where we resolve a 'Closure'.
 handleInstruction :: Instruction -> IO (Maybe Int)
-handleInstruction (CallStatic skey input) = do
-  mbSPtr <- unsafeLookupStaticPtr skey
-  return $ case mbSPtr of
-    Nothing -> Nothing
-    Just sptr ->
-      let fun = deRefStaticPtr sptr in
-      Just $ fun input
 handleInstruction (CallClosure cl input) =
   let fun = unclosure cl in
   return $ Just $ fun input
@@ -73,7 +61,6 @@ withStatic [d|
   instance Binary SerializableInt
   instance Typeable SerializableInt
   |]
-
 
 
 slave :: IO ()
@@ -98,17 +85,7 @@ master = do
     let sport_req = SPort sock
         rport_ans = RPort sock
     ------
-
     replicateM_ 3 $ do
-      p <- randomIO
-      putStrLn $ "p = " ++ show p
-      let fun = staticKey $ static double
-          req1 = CallStatic fun p
-      putStrLn "sending req1"
-      sendChan sport_req req1
-      mans1 :: Maybe Int <- receiveChan rport_ans
-      putStrLn $ "get ans1 = " ++ show mans1
-      ------
       h <- randomIO
       putStrLn $ "h = " ++ show h
       let hidden = SI h
