@@ -4,17 +4,21 @@
 {-# LANGUAGE StaticPointers #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-import Control.Concurrent.Async
-import Control.Concurrent.Chan
-import Control.Distributed.Closure
-import Control.Distributed.Closure.TH
+{-# OPTIONS_GHC -Wall -Werror #-}
+
+module Main where
+
+import Control.Concurrent.Async (withAsync)
+import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
+import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
+import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever)
-import Data.Binary
+import Data.Binary (Binary,decode,decodeOrFail,encode)
 import qualified Data.ByteString.Lazy as BSL
-import Data.Functor.Static
+import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
-import GHC.Generics
-import GHC.StaticPtr
+import GHC.Generics (Generic)
+import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 
 -- | An instruction to the server.
 data Instruction
