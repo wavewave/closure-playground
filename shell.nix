@@ -7,6 +7,7 @@ let
     distributed-closure
     network-simple
     monad-loops
+    random
   ]);
 in
 
