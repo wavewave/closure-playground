@@ -1,28 +1,28 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE StaticPointers #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE StaticPointers        #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 {-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-matches -fno-warn-incomplete-patterns #-}
 
 module Main where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
 import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
 import Control.Distributed.Closure.TH (withStatic)
--- import Control.Exception (bracket)
 import Control.Monad (forever)
+import Control.Monad.Loops (whileJust_)
 import Data.Binary (Binary,decode,decodeOrFail,encode)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
--- import Network.Socket (withSocketsDo)
--- import Network.Socket.ByteString (recv)
-import Network.Simple.TCP (HostPreference(Host), connect, serve)
+import Network.Simple.TCP (HostPreference(Host), connect, recv, send, serve)
 import System.Environment (getArgs)
 
 -- | An instruction to the server.
@@ -125,14 +125,24 @@ main' = withServer $ \serverChan -> do
 
 server :: IO ()
 server = do
-  serve (Host "127.0.0.1") "3929" $ \(connectionSocket, remoteAddr) ->
+  serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
+    whileJust_  (recv sock 4) $ \bs ->
+      print bs
 
 
 client :: IO ()
 client = do
-  connect "127.0.0.1" "3929" $ \(connectionSocket, remoteAddr) -> do
+  connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
+    threadDelay 2500000
+    send sock "abcd"
+    threadDelay 1000000
+    send sock "efgh"
+    threadDelay 1000000
+    send sock "ijklmn"
+    threadDelay 1000000
+    send sock "opq"
 
 main :: IO ()
 main = do

@@ -6,6 +6,7 @@ let
   hsenv = haskellPackages.ghcWithPackages (p: with p; [
     distributed-closure
     network-simple
+    monad-loops
   ]);
 in
 
