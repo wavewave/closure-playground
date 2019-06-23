@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -12,7 +13,12 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
-import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
+import Control.Distributed.Closure ( Closure
+                                   , Serializable
+                                   , cpure
+                                   , closureDict
+                                   , unclosure
+                                   )
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
 import Data.Binary (Binary)
@@ -28,7 +34,7 @@ import System.Random (randomIO)
 --
 import Comm (RPort(..),SPort(..),receiveChan,sendChan)
 
-
+{-
 -- | An instruction to the server.
 data Instruction
   = CallClosure (Closure (Int -> Int)) Int
@@ -37,22 +43,23 @@ data Instruction
     -- Apply the closure @cl@ to @arg@.
   deriving Generic
 instance Binary Instruction
+-}
+
+data Request a b = Request (Closure (a -> b)) a
+                   deriving (Generic, Typeable)
+
+instance (Serializable a, Serializable b) => Binary (Request a b)
 
 -- | Handle an instruction by the client.
 --
--- This is where we resolve a 'StaticKey'
--- by looking up the 'StaticPtr' and dereferencing it.
---
--- This is also where we resolve a 'Closure'.
-handleInstruction :: Instruction -> IO (Maybe Int)
-handleInstruction (CallClosure cl input) =
+handleRequest ::
+     (Serializable b, Show b)
+  => Request a b
+  -> IO (Maybe b)
+handleRequest (Request cl input) =
   let fun = unclosure cl in
   return $ Just $ fun input
 
-
--- | A global function that can be packed into a 'CallStatic' instruction.
-double :: Int -> Int
-double = (*2)
 
 -- | A wrapper around 'Int' used to fulfill the 'Serializable' constraint,
 -- so that it can be packed into a 'Closure'.
@@ -71,8 +78,8 @@ slave = do
     let rport_req = RPort sock
         sport_ans = SPort sock
     forever $ do
-      req <- receiveChan rport_req
-      mr <- handleInstruction req
+      req :: Request Int Int <- receiveChan rport_req
+      mr <- handleRequest req
       putStrLn $ "request handled with answer: " ++ show mr
       sendChan sport_ans mr
 
@@ -91,11 +98,11 @@ master = do
       let hidden = SI h
           c = static (\(SI a) b -> a + b)
             `staticMap` cpure closureDict hidden
-          req2 = CallClosure c 4
-      putStrLn "sending req2"
-      sendChan sport_req req2
-      mans2 :: Maybe Int <- receiveChan rport_ans
-      putStrLn $ "get ans2 = " ++ show mans2
+          req = (c,4::Int)
+      putStrLn "sending req"
+      sendChan sport_req req
+      mans :: Maybe Int <- receiveChan rport_ans
+      putStrLn $ "get ans = " ++ show mans
 
 
 main :: IO ()
