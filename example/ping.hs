@@ -4,7 +4,7 @@
 {-# LANGUAGE StaticPointers #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-{-# OPTIONS_GHC -Wall -Werror #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-matches -fno-warn-incomplete-patterns #-}
 
 module Main where
 
@@ -12,6 +12,7 @@ import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
 import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
 import Control.Distributed.Closure.TH (withStatic)
+-- import Control.Exception (bracket)
 import Control.Monad (forever)
 import Data.Binary (Binary,decode,decodeOrFail,encode)
 import qualified Data.ByteString.Lazy as BSL
@@ -19,6 +20,10 @@ import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
+-- import Network.Socket (withSocketsDo)
+-- import Network.Socket.ByteString (recv)
+import Network.Simple.TCP (HostPreference(Host), connect, serve)
+import System.Environment (getArgs)
 
 -- | An instruction to the server.
 data Instruction
@@ -90,8 +95,8 @@ withStatic [d|
   |]
 
 -- | Demonstration of client server interactions.
-main :: IO ()
-main = withServer $ \serverChan -> do
+main' :: IO ()
+main' = withServer $ \serverChan -> do
   do
     clientChan <- newChan
     -- Obtain the 'StaticPtr' to the global function 'double'
@@ -117,3 +122,21 @@ main = withServer $ \serverChan -> do
     writeChan serverChan (request, clientChan)
     result <- decode <$> readChan clientChan
     putStrLn $ "3 + 4 = " ++ show (result :: Maybe Int)
+
+server :: IO ()
+server = do
+  serve (Host "127.0.0.1") "3929" $ \(connectionSocket, remoteAddr) ->
+    putStrLn $ "TCP connection established from " ++ show remoteAddr
+
+
+client :: IO ()
+client = do
+  connect "127.0.0.1" "3929" $ \(connectionSocket, remoteAddr) -> do
+    putStrLn $ "Connection established to " ++ show remoteAddr
+
+main :: IO ()
+main = do
+  a0:_ <- getArgs
+  case a0 of
+    "server" -> server
+    "client" -> client
