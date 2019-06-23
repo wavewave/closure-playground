@@ -16,7 +16,7 @@ import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
 import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
 import Control.Distributed.Closure.TH (withStatic)
-import Control.Monad (forever, replicateM_)
+import Control.Monad (forever) --  replicateM_
 import Data.Binary (Binary,decode,decodeOrFail,encode)
 import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Static (staticMap)
@@ -28,7 +28,7 @@ import Network.Simple.TCP ( HostPreference(Host)
                           , serve
                           )
 import System.Environment (getArgs)
-import System.Random (randomIO)
+-- import System.Random (randomIO)
 --
 import Comm (RPort(..),SPort(..),receiveChan,sendChan)
 
@@ -64,31 +64,6 @@ handleInstruction (CallClosure cl input) =
   let fun = unclosure cl in
   return $ Just $ fun input
 
--- | Channel to which a client will send its request.
-type ServerChan = Chan (BL.ByteString, ResponseChan)
-
--- | Channel to which the server will send its response.
-type ResponseChan = Chan BL.ByteString
-
--- | Execute an action with a concurrent server thread.
---
--- This mocks a network connection between a client and a server process.
--- For simplicity, the client and server run within the same process
--- and communicate through 'Chan's instead of sockets.
---
--- The server listens on a channel for requests.
--- The client sends requests on that channel together with a response channel.
--- The server handles the request and sends the result on the response channel.
-withServer :: (ServerChan -> IO ()) -> IO ()
-withServer action = do
-  serverChan <- newChan
-  let server = forever $ do
-        (body, responseChan) <- readChan serverChan
-        result <- case decodeOrFail body of
-          Left _ -> return Nothing
-          Right (_, _, instruction) -> handleInstruction instruction
-        writeChan responseChan (encode result)
-  withAsync server (\_ -> action serverChan)
 
 -- | A global function that can be packed into a 'CallStatic' instruction.
 double :: Int -> Int
@@ -102,62 +77,40 @@ withStatic [d|
   instance Typeable SerializableInt
   |]
 
--- | Demonstration of client server interactions.
-main' :: IO ()
-main' = withServer $ \serverChan -> do
-  do
-    clientChan <- newChan
-    -- Obtain the 'StaticPtr' to the global function 'double'
-    -- using the 'static' keyword, enabled by the 'StaticPointers' extension.
-    -- Convert the 'StaticPtr' into a 'StaticKey' using 'staticKey',
-    -- so that it can be sent across the wire.
-    let fun = staticKey $ static double
-        request = encode $ CallStatic fun 4
-    writeChan serverChan (request, clientChan)
-    result <- decode <$> readChan clientChan
-    putStrLn $ "double 4 = " ++ show (result :: Maybe Int)
-  do
-    clientChan <- newChan
-    -- Construct a 'Closure' that effectively captures a value
-    -- and represents a partially applied function.
-    -- The 'static' keyword is used to convert a lambda,
-    -- that doesn't capture any free variables, into a 'StaticPtr'.
-    -- Then we use 'staticMap' to partially apply the lambda within the closure.
-    let three = SI 3
-        c = static (\(SI a) b -> a + b)
-          `staticMap` cpure closureDict three
-        request = encode $ CallClosure c 4
-    writeChan serverChan (request, clientChan)
-    result <- decode <$> readChan clientChan
-    putStrLn $ "3 + 4 = " ++ show (result :: Maybe Int)
 
 
-server :: IO ()
-server = do
+slave :: IO ()
+slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     forever $ do
     let rport = RPort sock
     forever $ do
-      x <- receiveChan rport :: IO Int
-      print x
+      req <- receiveChan rport
+      mr <- handleInstruction req
+      print mr
 
-
-client :: IO ()
-client = do
+master :: IO ()
+master = do
   connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
     let sport = SPort sock
-    replicateM_ 3 $ do
-      x <- randomIO :: IO Int
-      putStrLn $ "sending " ++ show x
-      sendChan sport x
-      threadDelay 1000000
+    ------
+    let fun = staticKey $ static double
+        req1 = CallStatic fun 4
+    sendChan sport req1
+    ------
+    let three = SI 3
+        c = static (\(SI a) b -> a + b)
+          `staticMap` cpure closureDict three
+        req2 = CallClosure c 4
+    sendChan sport req2
+
 
 main :: IO ()
 main = do
   a0:_ <- getArgs
   case a0 of
-    "server" -> server
-    "client" -> client
+    "slave"  -> slave
+    "master" -> master
