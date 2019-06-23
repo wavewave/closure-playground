@@ -8,7 +8,7 @@
 {-# LANGUAGE StaticPointers        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 
-
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -17,26 +17,21 @@ import Control.Concurrent.Chan (Chan,newChan,readChan,writeChan)
 import Control.Distributed.Closure (Closure,cpure,closureDict,unclosure)
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
-import Control.Monad.Loops (whileJust_)
 import Data.Binary (Binary,decode,decodeOrFail,encode)
-import Data.Binary.Get (getWord32le,runGet)
-import Data.Binary.Put (putWord32le,runPut)
-import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Static (staticMap)
 import Data.Typeable (Typeable)
-import Data.Word (Word32)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import Network.Simple.TCP ( HostPreference(Host)
-                          , Socket
                           , connect
-                          , recv
-                          , send
                           , serve
                           )
 import System.Environment (getArgs)
 import System.Random (randomIO)
+--
+import Comm (RPort(..),SPort(..),receiveChan,sendChan)
+
 
 -- | An instruction to the server.
 data Instruction
@@ -136,58 +131,6 @@ main' = withServer $ \serverChan -> do
     result <- decode <$> readChan clientChan
     putStrLn $ "3 + 4 = " ++ show (result :: Maybe Int)
 
--- | simple variable length message protocol
-data Msg = Msg { msgSize    :: !Word32
-               , msgPayload :: !B.ByteString
-               }
-         deriving Show
-
-newtype SPort a = SPort Socket
-
-newtype RPort a = RPort Socket
-
-toMsg :: (Binary a) => a -> Msg
-toMsg x = let bs = BL.toStrict (encode x)
-              sz = fromIntegral (B.length bs)
-          in Msg sz bs
-
-fromMsg :: (Binary a) => Msg -> a
-fromMsg (Msg _ bs) = decode (BL.fromStrict bs)
-
-recvMsg :: Socket -> IO (Maybe Msg)
-recvMsg sock = do
-  mbs <- recv sock 4
-  case mbs of
-    Nothing -> pure Nothing
-    Just bs -> do
-      let sz = runGet getWord32le (BL.fromStrict bs)
-      mbs' <- recv sock (fromIntegral sz)
-      case mbs' of
-        Nothing  -> pure Nothing
-        Just bs' -> pure $! Just (Msg sz bs')
-
-sendMsg :: Socket -> Msg -> IO ()
-sendMsg sock (Msg sz pl) = do
-  let lbs = runPut (putWord32le sz)
-  send sock (BL.toStrict lbs)
-  send sock pl
-
-
-sendChan :: (Binary a) => SPort a -> a -> IO ()
-sendChan (SPort sock) x = sendMsg sock (toMsg x)
-
-
-receiveChan :: (Binary a) => RPort a -> IO a
-receiveChan rp@(RPort sock) =
-  recvMsg sock >>= \case
-    Nothing ->
-      -- for now, we do this forever. later, we should wrap bare IO by
-      -- managed network process, so Nothing case redirects to disconnect
-      -- callback.
-      threadDelay 1000000 >> receiveChan rp
-
-    Just msg ->
-      pure (fromMsg msg)
 
 server :: IO ()
 server = do
