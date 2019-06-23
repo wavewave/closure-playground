@@ -17,6 +17,8 @@ import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever)
 import Control.Monad.Loops (whileJust_)
 import Data.Binary (Binary,decode,decodeOrFail,encode)
+import Data.Binary.Get (getWord32le,runGet)
+import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Static (staticMap)
@@ -24,7 +26,13 @@ import Data.Typeable (Typeable)
 import Data.Word (Word32)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticKey,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
-import Network.Simple.TCP (HostPreference(Host), connect, recv, send, serve)
+import Network.Simple.TCP ( HostPreference(Host)
+                          , Socket
+                          , connect
+                          , recv
+                          , send
+                          , serve
+                          )
 import System.Environment (getArgs)
 
 -- | An instruction to the server.
@@ -129,14 +137,40 @@ main' = withServer $ \serverChan -> do
 data Msg = Msg { msgSize :: Word32
                , msgPayload :: B.ByteString
                }
+         deriving Show
 
+recvMsg :: Socket -> IO (Maybe Msg)
+recvMsg sock = do
+  mbs <- recv sock 4
+  case mbs of
+    Nothing -> pure Nothing
+    Just bs -> do
+      let sz = runGet getWord32le (BL.fromStrict bs)
+      mbs' <- recv sock (fromIntegral sz)
+      case mbs' of
+        Nothing  -> pure Nothing
+        Just bs' -> pure $! Just (Msg sz bs')
+
+sendMsg :: Socket -> Msg -> IO ()
+sendMsg sock (Msg sz pl) = do
+  let lbs = runPut (putWord32le sz)
+  send sock (BL.toStrict lbs)
+  send sock pl
+
+
+testmsg :: Msg
+testmsg = Msg 14 "abcdefghijklmn"
+
+testmsg2 :: Msg
+testmsg2 = Msg 12 "opqrstuvwxyz"
 
 server :: IO ()
 server = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
-    whileJust_  (recv sock 4) $ \bs ->
-      print bs
+    whileJust_  (recvMsg sock) $ \msg ->
+      print msg
+--       print bs
 
 
 client :: IO ()
@@ -144,13 +178,10 @@ client = do
   connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
-    send sock "abcd"
+    sendMsg sock testmsg
     threadDelay 1000000
-    send sock "efgh"
-    threadDelay 1000000
-    send sock "ijklmn"
-    threadDelay 1000000
-    send sock "opq"
+    sendMsg sock testmsg2
+
 
 main :: IO ()
 main = do
