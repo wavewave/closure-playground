@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -5,7 +6,7 @@
 module Comm where
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Concurrent.STM (TMVar,atomically)
+import Control.Concurrent.STM (TChan, TVar, atomically, newTVarIO, readTVarIO, writeTChan)
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
 import Control.Monad (forever, void)
 import Control.Monad.Loops (whileJust_)
@@ -17,9 +18,9 @@ import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import Data.Foldable (for_)
 import Data.Map.Strict (Map)
--- import qualified Data.Map.Strict as M
--- import Data.IntMap (IntMap)
+import qualified Data.Map.Strict as M
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
 
@@ -89,23 +90,28 @@ sendIMsg sock (IMsg i sz pl) = do
 data ChanState = ChanState {
     chSocket :: Socket
   , chQueue :: TQueue IMsg
-  , chChanMap :: Map Word32 (TMVar IMsg)
+  , chChanMap :: TVar (Map Word32 (TChan Msg))
   }
 
 initChanState :: Socket -> IO ChanState
-initChanState sock = ChanState sock <$> newTQueueIO <*> pure mempty
+initChanState sock = ChanState sock <$> newTQueueIO <*> newTVarIO mempty
 
 
 type Managed = ReaderT ChanState IO
 
 route :: Managed ()
 route = void $ do
-  ChanState sock queue _ <- ask
+  ChanState sock queue mref <- ask
   -- router
   lift $ forkIO $ do
     forever $ do
-      imsg <- atomically $ readTQueue queue
-      print imsg
+      IMsg i sz pl <- atomically $ readTQueue queue
+      m <- readTVarIO mref
+      for_ (M.lookup i m) $ \ch -> do
+        let msg = Msg sz pl
+        atomically $ writeTChan ch (Msg sz pl)
+        putStrLn ("the following message is pushed to id: " ++ show i ++ "\n" ++ show msg)
+      -- print imsg
   -- receiver
   lift $ forkIO $
     whileJust_ (recvIMsg sock) $ \imsg ->

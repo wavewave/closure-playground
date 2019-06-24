@@ -13,6 +13,7 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
+import Control.Concurrent.STM (atomically, readTVar, writeTVar, newTChan, readTChan)
 import Control.Distributed.Closure ( Closure
                                    , Serializable
                                    , cpure
@@ -23,8 +24,10 @@ import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Reader (ask)
 import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
+import qualified Data.Map.Strict as M
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
@@ -34,7 +37,8 @@ import Network.Simple.TCP ( HostPreference(Host)
 import System.Environment (getArgs)
 import System.Random (randomIO)
 --
-import Comm (IMsg(..),Msg(..),RPort(..),SPort(..),receiveChan,sendChan,sendIMsg,sendMsg,runManaged)
+import Comm ( ChanState(..), IMsg(..),Msg(..),RPort(..),SPort(..)
+            , receiveChan,sendChan,sendIMsg,sendMsg,runManaged)
 
 
 data Request a b = Request (Closure (a -> b)) a
@@ -67,9 +71,18 @@ slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
+      ChanState _ _ mref <- ask
+      chan <- liftIO $
+        atomically $ do
+          m <- readTVar mref
+          ch <- newTChan
+          let !m' = M.insert 1928 ch m
+          writeTVar mref m'
+          pure ch
       forever $ liftIO $ do
         threadDelay 1500000
-        putStrLn "tick"
+        msg <- atomically (readTChan chan)
+        putStrLn $ "message dispatched: " ++ show msg
         {-
         let rport_req = RPort sock
             sport_ans = SPort sock
