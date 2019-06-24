@@ -53,6 +53,7 @@ import Comm ( BinProxy(..)
             , ChanState(..)
             , IMsg(..)
             , Msg(..)
+            , Managed
             , RPort(..)
             , SPort(..)
             , receiveChan
@@ -75,21 +76,20 @@ instance (Serializable a, Serializable b) => Binary (Request a b)
 -- ref: https://github.com/haskell-distributed/cloud-haskell/issues/7
 --      http://neilmitchell.blogspot.com/2017/09/existential-serialisation.html
 -- | existential request type
+data SomeRequest = forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show b) => SomeRequest (Request a b)
+
 class StaticSomeRequest a where
   staticSomeRequest :: a -> StaticPtr (Get SomeRequest)
 
 instance StaticSomeRequest (Request Int Int) where
   staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request Int Int)))
 
-
-data SomeRequest = forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show b) => SomeRequest (Request a b)
-
+instance StaticSomeRequest (Request Int String) where
+  staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request Int String)))
 
 instance Binary SomeRequest where
   put :: SomeRequest -> Put
   put (SomeRequest req) = do
-    -- let sget = SomeGet (get @r)
-    -- put $ staticKey $ static (SomeGet (get @r))
     put $ staticKey (staticSomeRequest req)
     put req
 
@@ -145,21 +145,45 @@ master = do
     runManaged sock $ do
       let sp_req = SPort 0
 
-      replicateM_ 5 $ do
-        (sp_ans,rp_ans) <- newChan @Int
-        h <- lift $ randomIO
-        let hidden = SI h
-            c = static (\(SI a) b -> a + b)
-              `staticMap` cpure closureDict hidden
-            req = Request c (4::Int) sp_ans
+      replicateM_ 5 $ task1 sp_req
+      replicateM_ 5 $ task2 sp_req
 
-        logText $ "sending type information"
+task1 :: SPort SomeRequest -> Managed ()
+task1 sp_req = do
+  (sp_ans,rp_ans) <- newChan @Int
+  h <- lift $ randomIO
+  let hidden = SI h
+      c = static (\(SI a) b -> a + b)
+        `staticMap` cpure closureDict hidden
+      req = Request c (4::Int) sp_ans
 
-        logText $ "sending req with hidden: " <> T.pack (show h)
-        sendChan sp_req (SomeRequest req)
-        ans <- receiveChan rp_ans
-        logText $ "get answer = " <> T.pack (show ans)
-        lift $ threadDelay 1200000
+  logText $ "sending type information"
+
+  logText $ "sending req with hidden: " <> T.pack (show h)
+  sendChan sp_req (SomeRequest req)
+  ans <- receiveChan rp_ans
+  logText $ "get answer = " <> T.pack (show ans)
+  lift $ threadDelay 1200000
+
+
+task2 :: SPort SomeRequest -> Managed ()
+task2 sp_req = do
+  (sp_ans,rp_ans) <- newChan @String
+  h <- lift $ randomIO
+  let hidden = SI h
+      c = static (\(SI a) b -> show a ++ ":" ++ show b)
+        `staticMap` cpure closureDict hidden
+      req = Request c (100::Int) sp_ans
+
+  logText $ "sending type information"
+
+  logText $ "sending req with hidden: " <> T.pack (show h)
+  sendChan sp_req (SomeRequest req)
+  ans <- receiveChan rp_ans
+  logText $ "get answer = " <> T.pack (show ans)
+  lift $ threadDelay 1200000
+
+
 
 main :: IO ()
 main = do
