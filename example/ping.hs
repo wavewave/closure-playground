@@ -34,7 +34,7 @@ import Network.Simple.TCP ( HostPreference(Host)
 import System.Environment (getArgs)
 import System.Random (randomIO)
 --
-import Comm (Msg(..),RPort(..),SPort(..),receiveChan,sendChan,sendMsg,runManaged)
+import Comm (IMsg(..),Msg(..),RPort(..),SPort(..),receiveChan,sendChan,sendIMsg,sendMsg,runManaged)
 
 
 data Request a b = Request (Closure (a -> b)) a
@@ -87,7 +87,7 @@ master = do
     runManaged sock $ do
       replicateM_ 5 $ liftIO $ do
         threadDelay 1200000
-        sendMsg sock (Msg 4 "abcd")
+        sendIMsg sock (IMsg 1928 4 "abcd")
 
       {-
       let sport_req = SPort sock

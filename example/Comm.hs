@@ -54,11 +54,40 @@ sendMsg sock (Msg sz pl) = do
   send sock (BL.toStrict lbs)
   send sock pl
 
+-- | message with target id
+data IMsg = IMsg { imsgReceiver :: !Word32
+                 , imsgSize    :: !Word32
+                 , imsgPayload :: !B.ByteString
+                }
+         deriving Show
+
+recvIMsg :: Socket -> IO (Maybe IMsg)
+recvIMsg sock = do
+  runMaybeT $ do
+    bs1 <- MaybeT $ recv sock 4
+    let i = runGet getWord32le (BL.fromStrict bs1)
+    bs2 <- MaybeT $ recv sock 4
+    let sz = runGet getWord32le (BL.fromStrict bs2)
+    payload <- MaybeT $ recv sock (fromIntegral sz)
+    pure $! IMsg i sz payload
+
+
+sendIMsg :: Socket -> IMsg -> IO ()
+sendIMsg sock (IMsg i sz pl) = do
+  let lb_i  = runPut (putWord32le i)
+  send sock (BL.toStrict lb_i)
+  let lb_sz = runPut (putWord32le sz)
+  send sock (BL.toStrict lb_sz)
+  send sock pl
+
+
+
+
 -------------
 -- Managed --
 -------------
 
-type Managed = ReaderT {- (IntMap String) -} (TQueue Msg) IO
+type Managed = ReaderT {- (IntMap String) -} (TQueue IMsg) IO
 
 runManaged :: Socket -> Managed () -> IO ()
 runManaged sock action = do
@@ -68,13 +97,13 @@ runManaged sock action = do
     lift $ do
       forkIO $ do
         forever $ do
-          msg <- atomically $ readTQueue q
-          print msg
+          imsg <- atomically $ readTQueue q
+          print imsg
           -- threadDelay 1000000
           -- sendMsg sock (Msg 4 "test")
       forkIO $
-        whileJust_ (recvMsg sock) $ \msg ->
-          atomically $ writeTQueue q msg
+        whileJust_ (recvIMsg sock) $ \imsg ->
+          atomically $ writeTQueue q imsg
     action
 
 -------------
