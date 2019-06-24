@@ -31,6 +31,8 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Foldable (for_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Text (Text)
+import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
 
@@ -100,36 +102,57 @@ data ChanState = ChanState {
     chSocket :: Socket
   , chQueue :: TQueue IMsg
   , chChanMap :: TVar (Map Word32 (TChan Msg))
+  , chLogQueue :: TQueue Text
   }
 
 initChanState :: Socket -> IO ChanState
-initChanState sock = ChanState sock <$> newTQueueIO <*> newTVarIO mempty
+initChanState sock =
+  ChanState sock <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
 
 
 type Managed = ReaderT ChanState IO
 
-route :: Managed ()
-route = void $ do
-  ChanState sock queue mref <- ask
+router :: Managed ()
+router = void $ do
+  ChanState sock queue mref _ <- ask
   -- router
-  lift $ forkIO $ do
+  lift $ forkIO $
     forever $ do
       IMsg i msg <- atomically $ readTQueue queue
       m <- readTVarIO mref
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
-        putStrLn ("the following message is pushed to id: " ++ show i ++ "\n" ++ show msg)
+        -- logText
+        --   ("the following message is pushed to id: " <> T.pack (show i) <> "\n" <> T.pack (show msg))
   -- receiver
   lift $ forkIO $
     whileJust_ (recvIMsg sock) $ \imsg ->
       atomically $ writeTQueue queue imsg
 
+logger :: Managed ()
+logger = void $ do
+  lq <- chLogQueue <$> ask
+  lift $ forkIO $ do
+    forever $ do
+      txt <- atomically $ readTQueue lq
+      TIO.putStrLn txt
+
 runManaged :: Socket -> Managed () -> IO ()
 runManaged sock action = do
   chst <- initChanState sock
   void $ flip runReaderT chst $ do
-    route
+    router
+    logger
     action
+
+-------------
+-- Logging --
+-------------
+
+logText :: Text -> Managed ()
+logText txt = do
+  lq <- chLogQueue <$> ask
+  lift $ atomically $ writeTQueue lq txt
 
 -------------
 -- Channel --
@@ -141,7 +164,7 @@ data RPort a = RPort Word32 (TChan Msg)
 
 newChan :: Managed (SPort a, RPort a)
 newChan = do
-  ChanState _ _ mref <- ask
+  ChanState _ _ mref _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref

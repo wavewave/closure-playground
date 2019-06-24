@@ -28,6 +28,7 @@ import Control.Monad.Trans.Reader (ask)
 import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
@@ -48,6 +49,7 @@ import Comm ( ChanState(..)
             , sendIMsg
             , sendMsg
             , runManaged
+            , logText
             )
 
 
@@ -61,10 +63,10 @@ instance (Serializable a, Serializable b) => Binary (Request a b)
 handleRequest ::
      (Serializable b, Show b)
   => Request a b
-  -> IO (Maybe b)
+  -> IO b
 handleRequest (Request cl input) =
-  let fun = unclosure cl in
-  return $ Just $ fun input
+  let fun = unclosure cl
+  in pure $ fun input
 
 
 -- | A wrapper around 'Int' used to fulfill the 'Serializable' constraint,
@@ -84,15 +86,14 @@ slave = do
       (_,rp) <- newChan
       forever $ do
         x :: Int <- receiveChan rp
-        -- msg <- atomically (readTChan chan)
-        liftIO $ putStrLn $ "data dispatched: " ++ show x
+        logText ("data dispatched: " <> T.pack (show x))
         {-
         let rport_req = RPort sock
             sport_ans = SPort sock
         req :: Request Int Int <- receiveChan rport_req
-        mr <- lift $ handleRequest req
-        lift $ putStrLn $ "request handled with answer: " ++ show mr
-        sendChan sport_ans mr
+        r <- lift $ handleRequest req
+        lift $ putStrLn $ "request handled with answer: " ++ show r
+        sendChan sport_ans r
         -}
 
 master :: IO ()
@@ -101,6 +102,7 @@ master = do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
     runManaged sock $ do
+
       replicateM_ 5 $ do
         liftIO $ threadDelay 1200000
         let sport = SPort 0
