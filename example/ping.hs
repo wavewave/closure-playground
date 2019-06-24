@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StaticPointers        #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 
 -- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
 module Main where
@@ -53,7 +54,7 @@ import Comm ( ChanState(..)
             )
 
 
-data Request a b = Request (Closure (a -> b)) a
+data Request a b = Request (Closure (a -> b)) a (SPort b)
                    deriving (Generic, Typeable)
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
@@ -64,7 +65,7 @@ handleRequest ::
      (Serializable b, Show b)
   => Request a b
   -> IO b
-handleRequest (Request cl input) =
+handleRequest (Request cl input _) =
   let fun = unclosure cl
   in pure $ fun input
 
@@ -77,24 +78,19 @@ withStatic [d|
   instance Typeable SerializableInt
   |]
 
-
 slave :: IO ()
 slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
-      (_,rp) <- newChan
+      (_,rp) <- newChan -- fixed id = 0
       forever $ do
-        x :: Int <- receiveChan rp
-        logText ("data dispatched: " <> T.pack (show x))
-        {-
-        let rport_req = RPort sock
-            sport_ans = SPort sock
-        req :: Request Int Int <- receiveChan rport_req
-        r <- lift $ handleRequest req
-        lift $ putStrLn $ "request handled with answer: " ++ show r
-        sendChan sport_ans r
-        -}
+        req@(Request _ _ sp_ans :: Request Int Int) <- receiveChan rp
+        logText $ "requested:"
+        ans <- lift $ handleRequest req
+        logText $ "request handled with answer: " <> T.pack (show ans)
+        sendChan sp_ans ans
+        logText $ "answer sent"
 
 master :: IO ()
 master = do
@@ -104,26 +100,19 @@ master = do
     runManaged sock $ do
 
       replicateM_ 5 $ do
-        liftIO $ threadDelay 1200000
-        let sport = SPort 0
-        sendChan sport (12345 :: Int)
-
-      {-
-      let sport_req = SPort sock
-          rport_ans = RPort sock
-      ------
-      replicateM_ 3 $ do
+        (sp_ans,rp_ans) <- newChan @Int
         h <- lift $ randomIO
-        lift $ putStrLn $ "h = " ++ show h
         let hidden = SI h
             c = static (\(SI a) b -> a + b)
               `staticMap` cpure closureDict hidden
-            req = (c,4::Int)
-        lift $ putStrLn "sending req"
-        sendChan sport_req req
-        mans :: Maybe Int <- receiveChan rport_ans
-        lift $ putStrLn $ "get ans = " ++ show mans
-      -}
+            req = Request c (4::Int) sp_ans
+
+        let sp = SPort 0
+        logText $ "sending req with hidden: " <> T.pack (show h)
+        sendChan sp req
+        ans <- receiveChan rp_ans
+        logText $ "get answer = " <> T.pack (show ans)
+        lift $ threadDelay 1200000
 
 main :: IO ()
 main = do

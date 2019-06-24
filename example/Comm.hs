@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -32,6 +33,7 @@ import Data.Foldable (for_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
+import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
@@ -158,7 +160,7 @@ logText txt = do
 -- Channel --
 -------------
 
-newtype SPort a = SPort Word32
+newtype SPort a = SPort Word32 deriving (Binary, Typeable)
 
 data RPort a = RPort Word32 (TChan Msg)
 
