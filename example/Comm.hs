@@ -5,7 +5,7 @@
 module Comm where
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM (TMVar,atomically)
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
 import Control.Monad (forever, void)
 import Control.Monad.Loops (whileJust_)
@@ -17,6 +17,8 @@ import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import Data.Map.Strict (Map)
+-- import qualified Data.Map.Strict as M
 -- import Data.IntMap (IntMap)
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
@@ -80,30 +82,40 @@ sendIMsg sock (IMsg i sz pl) = do
   send sock (BL.toStrict lb_sz)
   send sock pl
 
-
-
-
 -------------
 -- Managed --
 -------------
 
-type Managed = ReaderT {- (IntMap String) -} (TQueue IMsg) IO
+data ChanState = ChanState {
+    chSocket :: Socket
+  , chQueue :: TQueue IMsg
+  , chChanMap :: Map Word32 (TMVar IMsg)
+  }
+
+initChanState :: Socket -> IO ChanState
+initChanState sock = ChanState sock <$> newTQueueIO <*> pure mempty
+
+
+type Managed = ReaderT ChanState IO
+
+route :: Managed ()
+route = void $ do
+  ChanState sock queue _ <- ask
+  -- router
+  lift $ forkIO $ do
+    forever $ do
+      imsg <- atomically $ readTQueue queue
+      print imsg
+  -- receiver
+  lift $ forkIO $
+    whileJust_ (recvIMsg sock) $ \imsg ->
+      atomically $ writeTQueue queue imsg
 
 runManaged :: Socket -> Managed () -> IO ()
 runManaged sock action = do
-  queue <- newTQueueIO
-  void $ flip runReaderT queue $ do
-    q <- ask
-    lift $ do
-      forkIO $ do
-        forever $ do
-          imsg <- atomically $ readTQueue q
-          print imsg
-          -- threadDelay 1000000
-          -- sendMsg sock (Msg 4 "test")
-      forkIO $
-        whileJust_ (recvIMsg sock) $ \imsg ->
-          atomically $ writeTQueue q imsg
+  chst <- initChanState sock
+  void $ flip runReaderT chst $ do
+    route
     action
 
 -------------
