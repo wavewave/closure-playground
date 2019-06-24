@@ -24,7 +24,7 @@ import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.Reader (ReaderT(runReaderT),ask)
-import Data.Binary (Binary, decode, encode)
+import Data.Binary (Binary(get,put), decode, encode)
 import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
@@ -37,6 +37,12 @@ import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
+
+data BinProxy a = BinProxy
+
+instance Binary (BinProxy a) where
+  put BinProxy = mempty
+  get          = pure BinProxy
 
 -------------
 -- Message --

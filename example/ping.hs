@@ -26,11 +26,14 @@ import Control.Monad (forever, replicateM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ask)
-import Data.Binary (Binary)
+import Data.Binary (Binary(get,put))
+import Data.Dynamic.Binary (Dynamic,dynTypeRep,toDyn)
 import Data.Functor.Static (staticMap)
 import qualified Data.Map.Strict as M
+-- import Data.Proxy (Proxy(..))
 import qualified Data.Text as T
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable,TypeRep,TyCon)
+-- import Data.Typeable.Internal ()
 import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
                           , connect
@@ -38,8 +41,10 @@ import Network.Simple.TCP ( HostPreference(Host)
                           )
 import System.Environment (getArgs)
 import System.Random (randomIO)
+import Type.Reflection ()
 --
-import Comm ( ChanState(..)
+import Comm ( BinProxy(..)
+            , ChanState(..)
             , IMsg(..)
             , Msg(..)
             , RPort(..)
@@ -54,8 +59,10 @@ import Comm ( ChanState(..)
             )
 
 
+-- | Request type
 data Request a b = Request (Closure (a -> b)) a (SPort b)
                    deriving (Generic, Typeable)
+
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
 
@@ -83,9 +90,12 @@ slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
-      (_,rp) <- newChan -- fixed id = 0
+      (_,rp_typ) <- newChan -- fixed id = 0
+      (_,rp_req) <- newChan -- fixed id = 1
       forever $ do
-        req@(Request _ _ sp_ans :: Request Int Int) <- receiveChan rp
+        dyn :: Dynamic <- receiveChan rp_typ
+        liftIO $ print (dynTypeRep dyn)
+        req@(Request _ _ sp_ans :: Request Int Int) <- receiveChan rp_req
         logText $ "requested:"
         ans <- lift $ handleRequest req
         logText $ "request handled with answer: " <> T.pack (show ans)
@@ -98,6 +108,8 @@ master = do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
     runManaged sock $ do
+      let sp_typ = SPort 0 -- type
+          sp_req = SPort 1 -- request
 
       replicateM_ 5 $ do
         (sp_ans,rp_ans) <- newChan @Int
@@ -107,9 +119,11 @@ master = do
               `staticMap` cpure closureDict hidden
             req = Request c (4::Int) sp_ans
 
-        let sp = SPort 0
+        logText $ "sending type information"
+        sendChan sp_typ (toDyn (BinProxy @Int))
+
         logText $ "sending req with hidden: " <> T.pack (show h)
-        sendChan sp req
+        sendChan sp_req req
         ans <- receiveChan rp_ans
         logText $ "get answer = " <> T.pack (show ans)
         lift $ threadDelay 1200000
