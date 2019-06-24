@@ -9,7 +9,7 @@
 {-# LANGUAGE StaticPointers        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
+-- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -21,6 +21,7 @@ import Control.Distributed.Closure ( Closure
                                    )
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import Data.Binary (Binary)
 import Data.Functor.Static (staticMap)
@@ -33,7 +34,7 @@ import Network.Simple.TCP ( HostPreference(Host)
 import System.Environment (getArgs)
 import System.Random (randomIO)
 --
-import Comm (RPort(..),SPort(..),receiveChan,sendChan,runManaged)
+import Comm (Msg(..),RPort(..),SPort(..),receiveChan,sendChan,sendMsg,runManaged)
 
 
 data Request a b = Request (Closure (a -> b)) a
@@ -66,14 +67,17 @@ slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
-      forever $ do
+      forever $ liftIO $ do
+        threadDelay 1500000
+        putStrLn "tick"
+        {-
         let rport_req = RPort sock
             sport_ans = SPort sock
         req :: Request Int Int <- receiveChan rport_req
         mr <- lift $ handleRequest req
         lift $ putStrLn $ "request handled with answer: " ++ show mr
         sendChan sport_ans mr
-
+        -}
 
 master :: IO ()
 master = do
@@ -81,6 +85,11 @@ master = do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
     runManaged sock $ do
+      replicateM_ 5 $ liftIO $ do
+        threadDelay 1200000
+        sendMsg sock (Msg 4 "abcd")
+
+      {-
       let sport_req = SPort sock
           rport_ans = RPort sock
       ------
@@ -95,7 +104,7 @@ master = do
         sendChan sport_req req
         mans :: Maybe Int <- receiveChan rport_ans
         lift $ putStrLn $ "get ans = " ++ show mans
-
+      -}
 
 main :: IO ()
 main = do

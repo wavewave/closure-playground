@@ -1,17 +1,23 @@
-{-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
 module Comm where
 
-import Control.Concurrent (threadDelay)
-import Control.Monad (void)
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
+import Control.Monad (forever, void)
+import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Reader (ReaderT(runReaderT))
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Trans.Reader (ReaderT(runReaderT),ask)
 import Data.Binary (Binary, decode, encode)
 import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
-import Data.IntMap (IntMap)
+-- import Data.IntMap (IntMap)
 import Data.Word (Word32)
 import Network.Simple.TCP (Socket, recv, send)
 
@@ -25,9 +31,6 @@ data Msg = Msg { msgSize    :: !Word32
                }
          deriving Show
 
-newtype SPort a = SPort Socket
-
-newtype RPort a = RPort Socket
 
 toMsg :: (Binary a) => a -> Msg
 toMsg x = let bs = BL.toStrict (encode x)
@@ -38,16 +41,12 @@ fromMsg :: (Binary a) => Msg -> a
 fromMsg (Msg _ bs) = decode (BL.fromStrict bs)
 
 recvMsg :: Socket -> IO (Maybe Msg)
-recvMsg sock = do
-  mbs <- recv sock 4
-  case mbs of
-    Nothing -> pure Nothing
-    Just bs -> do
-      let sz = runGet getWord32le (BL.fromStrict bs)
-      mbs' <- recv sock (fromIntegral sz)
-      case mbs' of
-        Nothing  -> pure Nothing
-        Just bs' -> pure $! Just (Msg sz bs')
+recvMsg sock =
+  runMaybeT $ do
+    bs <- MaybeT $ recv sock 4
+    let sz = runGet getWord32le (BL.fromStrict bs)
+    bs' <- MaybeT $ recv sock (fromIntegral sz)
+    pure $! Msg sz bs'
 
 sendMsg :: Socket -> Msg -> IO ()
 sendMsg sock (Msg sz pl) = do
@@ -55,21 +54,37 @@ sendMsg sock (Msg sz pl) = do
   send sock (BL.toStrict lbs)
   send sock pl
 
-
 -------------
 -- Managed --
 -------------
 
-type Managed = ReaderT (IntMap String) IO
+type Managed = ReaderT {- (IntMap String) -} (TQueue Msg) IO
 
 runManaged :: Socket -> Managed () -> IO ()
-runManaged _sock action =
-  void $ flip runReaderT mempty $ do
+runManaged sock action = do
+  queue <- newTQueueIO
+  void $ flip runReaderT queue $ do
+    q <- ask
+    lift $ do
+      forkIO $ do
+        forever $ do
+          msg <- atomically $ readTQueue q
+          print msg
+          -- threadDelay 1000000
+          -- sendMsg sock (Msg 4 "test")
+      forkIO $
+        whileJust_ (recvMsg sock) $ \msg ->
+          atomically $ writeTQueue q msg
     action
 
 -------------
 -- Channel --
 -------------
+
+newtype SPort a = SPort Socket
+
+newtype RPort a = RPort Socket
+
 
 sendChan :: (Binary a) => SPort a -> a -> Managed ()
 sendChan (SPort sock) = lift . sendMsg sock . toMsg
