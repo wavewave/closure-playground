@@ -37,8 +37,18 @@ import Network.Simple.TCP ( HostPreference(Host)
 import System.Environment (getArgs)
 import System.Random (randomIO)
 --
-import Comm ( ChanState(..), IMsg(..),Msg(..),RPort(..),SPort(..)
-            , receiveChan,sendChan,sendIMsg,sendMsg,runManaged)
+import Comm ( ChanState(..)
+            , IMsg(..)
+            , Msg(..)
+            , RPort(..)
+            , SPort(..)
+            , receiveChan
+            , sendChan
+            , newChan
+            , sendIMsg
+            , sendMsg
+            , runManaged
+            )
 
 
 data Request a b = Request (Closure (a -> b)) a
@@ -71,18 +81,11 @@ slave = do
   serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
-      ChanState _ _ mref <- ask
-      chan <- liftIO $
-        atomically $ do
-          m <- readTVar mref
-          ch <- newTChan
-          let !m' = M.insert 1928 ch m
-          writeTVar mref m'
-          pure ch
-      forever $ liftIO $ do
-        threadDelay 1500000
-        msg <- atomically (readTChan chan)
-        putStrLn $ "message dispatched: " ++ show msg
+      (_,rp) <- newChan
+      forever $ do
+        x :: Int <- receiveChan rp
+        -- msg <- atomically (readTChan chan)
+        liftIO $ putStrLn $ "data dispatched: " ++ show x
         {-
         let rport_req = RPort sock
             sport_ans = SPort sock
@@ -98,9 +101,10 @@ master = do
     putStrLn $ "Connection established to " ++ show remoteAddr
     threadDelay 2500000
     runManaged sock $ do
-      replicateM_ 5 $ liftIO $ do
-        threadDelay 1200000
-        sendIMsg sock (IMsg 1928 4 "abcd")
+      replicateM_ 5 $ do
+        liftIO $ threadDelay 1200000
+        let sport = SPort 0
+        sendChan sport (12345 :: Int)
 
       {-
       let sport_req = SPort sock

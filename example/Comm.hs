@@ -2,11 +2,21 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
+-- {-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
 module Comm where
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Concurrent.STM (TChan, TVar, atomically, newTVarIO, readTVarIO, writeTChan)
+import Control.Concurrent.STM ( TChan
+                              , TVar
+                              , atomically
+                              , newTVarIO
+                              , readTVar
+                              , readTVarIO
+                              , writeTVar
+                              , newTChan
+                              , readTChan
+                              , writeTChan
+                              )
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
 import Control.Monad (forever, void)
 import Control.Monad.Loops (whileJust_)
@@ -59,8 +69,7 @@ sendMsg sock (Msg sz pl) = do
 
 -- | message with target id
 data IMsg = IMsg { imsgReceiver :: !Word32
-                 , imsgSize    :: !Word32
-                 , imsgPayload :: !B.ByteString
+                 , imsgMsg      :: !Msg
                 }
          deriving Show
 
@@ -72,11 +81,11 @@ recvIMsg sock = do
     bs2 <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs2)
     payload <- MaybeT $ recv sock (fromIntegral sz)
-    pure $! IMsg i sz payload
+    pure $! IMsg i (Msg sz payload)
 
 
 sendIMsg :: Socket -> IMsg -> IO ()
-sendIMsg sock (IMsg i sz pl) = do
+sendIMsg sock (IMsg i (Msg sz pl)) = do
   let lb_i  = runPut (putWord32le i)
   send sock (BL.toStrict lb_i)
   let lb_sz = runPut (putWord32le sz)
@@ -105,13 +114,11 @@ route = void $ do
   -- router
   lift $ forkIO $ do
     forever $ do
-      IMsg i sz pl <- atomically $ readTQueue queue
+      IMsg i msg <- atomically $ readTQueue queue
       m <- readTVarIO mref
       for_ (M.lookup i m) $ \ch -> do
-        let msg = Msg sz pl
-        atomically $ writeTChan ch (Msg sz pl)
+        atomically $ writeTChan ch msg
         putStrLn ("the following message is pushed to id: " ++ show i ++ "\n" ++ show msg)
-      -- print imsg
   -- receiver
   lift $ forkIO $
     whileJust_ (recvIMsg sock) $ \imsg ->
@@ -128,24 +135,29 @@ runManaged sock action = do
 -- Channel --
 -------------
 
-newtype SPort a = SPort Socket
+newtype SPort a = SPort Word32
 
-newtype RPort a = RPort Socket
+data RPort a = RPort Word32 (TChan Msg)
+
+newChan :: Managed (SPort a, RPort a)
+newChan = do
+  ChanState _ _ mref <- ask
+  lift $
+    atomically $ do
+      m <- readTVar mref
+      let ks = M.keys m
+          newid = if null ks then 0 else maximum ks + 1
+      ch <- newTChan
+      let !m' = M.insert newid ch m
+      writeTVar mref m'
+      pure (SPort newid, RPort newid ch)
 
 
 sendChan :: (Binary a) => SPort a -> a -> Managed ()
-sendChan (SPort sock) = lift . sendMsg sock . toMsg
-
+sendChan (SPort i) x = do
+  sock <- chSocket <$> ask
+  lift $ sendIMsg sock (IMsg i (toMsg x))
 
 receiveChan :: (Binary a) => RPort a -> Managed a
-receiveChan rp@(RPort sock) =
-  lift (recvMsg sock) >>= \case
-    Nothing ->
-      -- for now, we do this forever. later, we should wrap bare IO by
-      -- managed network process, so Nothing case redirects to disconnect
-      -- callback.
-      -- TODO: fix this
-      lift (threadDelay 1000000) >> receiveChan rp
-
-    Just msg ->
-      pure (fromMsg msg)
+receiveChan rp@(RPort _ chan) =
+  fromMsg <$> lift (atomically (readTChan chan))
