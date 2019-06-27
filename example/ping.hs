@@ -28,12 +28,14 @@ import Control.Distributed.Closure ( Closure
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ask)
 import Data.Binary (Binary(get,put))
 import Data.Binary.Get (Get(..))
 import Data.Binary.Put (Put(..))
 import Data.Dynamic (fromDynamic,toDyn)
+import Data.Foldable (for_)
 import Data.Functor.Static (staticMap)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
@@ -67,7 +69,7 @@ import Comm ( BinProxy(..)
 
 
 -- | Request type
-data Request a b = Request (Closure (a -> b)) a (SPort b)
+data Request a b = Request (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
                    deriving (Generic, Typeable)
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
@@ -76,7 +78,7 @@ instance (Serializable a, Serializable b) => Binary (Request a b)
 -- ref: https://github.com/haskell-distributed/cloud-haskell/issues/7
 --      http://neilmitchell.blogspot.com/2017/09/existential-serialisation.html
 -- | existential request type
-data SomeRequest = forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show b) => SomeRequest (Request a b)
+data SomeRequest = forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b) => SomeRequest (Request a b)
 
 class StaticSomeRequest a where
   staticSomeRequest :: a -> StaticPtr (Get SomeRequest)
@@ -106,8 +108,9 @@ instance Binary SomeRequest where
 handleRequest ::
      (Serializable b)
   => Request a b
+  -> a
   -> IO b
-handleRequest (Request cl input _) =
+handleRequest (Request cl _ _) input =
   let fun = unclosure cl
   in pure $ fun input
 
@@ -129,12 +132,16 @@ slave = do
       (_,rp_req) <- newChan -- fixed id = 0
       forever $ do
         SomeRequest req <- receiveChan rp_req
-        let Request _ _ sp_ans = req
-        logText $ "requested:"
-        ans <- lift $ handleRequest req
-        logText $ "request handled with answer: " <> T.pack (show ans)
-        sendChan sp_ans ans
-        logText $ "answer sent"
+        let Request _ sp_sp sp_ans = req
+        (sp_input,rp_input) <- newChan
+        logText $ "sp_input sent:"
+        sendChan sp_sp sp_input
+        whileJust_ (receiveChan rp_input) $ \input -> do
+          logText $ "requested for input: " <> T.pack (show input)
+          ans <- lift $ handleRequest req input
+          logText $ "request handled with answer: " <> T.pack (show ans)
+          sendChan sp_ans ans
+          logText $ "answer sent"
 
 
 master :: IO ()
@@ -145,44 +152,55 @@ master = do
     runManaged sock $ do
       let sp_req = SPort 0
 
-      replicateM_ 5 $ task1 sp_req
-      replicateM_ 5 $ task2 sp_req
+      replicateM_ 3 $ task1 sp_req
+      replicateM_ 3 $ task2 sp_req
 
 task1 :: SPort SomeRequest -> Managed ()
 task1 sp_req = do
   (sp_ans,rp_ans) <- newChan @Int
+  (sp_sp,rp_sp) <- newChan @(SPort (Maybe Int))
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> a + b)
         `staticMap` cpure closureDict hidden
-      req = Request c (4::Int) sp_ans
-
-  logText $ "sending type information"
+      req = Request c sp_sp sp_ans
 
   logText $ "sending req with hidden: " <> T.pack (show h)
   sendChan sp_req (SomeRequest req)
-  ans <- receiveChan rp_ans
-  logText $ "get answer = " <> T.pack (show ans)
-  lift $ threadDelay 1200000
+
+  logText $ "receiving sp_input"
+  sp_input <- receiveChan rp_sp
+
+  for_ [4,5,6,7,8] $ \input -> do
+    sendChan sp_input (Just input)
+    ans <- receiveChan rp_ans
+    logText $ "get answer = " <> T.pack (show ans)
+    lift $ threadDelay 1200000
+  sendChan sp_input Nothing
 
 
 task2 :: SPort SomeRequest -> Managed ()
 task2 sp_req = do
   (sp_ans,rp_ans) <- newChan @String
+  (sp_sp,rp_sp) <- newChan @(SPort (Maybe Int))
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> show a ++ ":" ++ show b)
         `staticMap` cpure closureDict hidden
-      req = Request c (100::Int) sp_ans
-
-  logText $ "sending type information"
+      req = Request c sp_sp sp_ans
 
   logText $ "sending req with hidden: " <> T.pack (show h)
   sendChan sp_req (SomeRequest req)
-  ans <- receiveChan rp_ans
-  logText $ "get answer = " <> T.pack (show ans)
-  lift $ threadDelay 1200000
 
+  logText $ "receiving sp_input"
+  sp_input <- receiveChan rp_sp
+
+  for_ [100,200,300] $ \input -> do
+    sendChan sp_input (Just input)
+    ans <- receiveChan rp_ans
+    logText $ "get answer = " <> T.pack (show ans)
+    lift $ threadDelay 1200000
+  sendChan sp_input Nothing
 
 
 main :: IO ()
