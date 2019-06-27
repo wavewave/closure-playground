@@ -26,7 +26,7 @@ import Control.Distributed.Closure ( Closure
                                    , unclosure
                                    )
 import Control.Distributed.Closure.TH (withStatic)
-import Control.Monad (forever, replicateM_)
+import Control.Monad (forever, replicateM, replicateM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
@@ -39,6 +39,7 @@ import Data.Foldable (for_)
 import Data.Functor.Static (staticMap)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
+import Data.Traversable (for)
 import Data.Typeable (Typeable,TypeRep,TyCon)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticPtr(..),deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
@@ -152,56 +153,49 @@ master = do
     runManaged sock $ do
       let sp_req = SPort 0
 
-      replicateM_ 3 $ task1 sp_req
-      replicateM_ 3 $ task2 sp_req
+      rs1 <- replicateM 3 $ (mkclosure1 >>= \clsr -> callRequest sp_req clsr [1,2,3])
+      logText $ T.pack (show rs1)
+      rs2 <- replicateM 3 $ (mkclosure2 >>= \clsr -> callRequest sp_req clsr [100,200,300::Int])
+      logText $ T.pack (show rs2)
 
-task1 :: SPort SomeRequest -> Managed ()
-task1 sp_req = do
-  (sp_ans,rp_ans) <- newChan @Int
-  (sp_sp,rp_sp) <- newChan @(SPort (Maybe Int))
+
+callRequest ::
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => SPort SomeRequest -> Closure (a -> b) -> [a] -> Managed [b]
+callRequest sp_req clsr inputs = do
+  (sp_ans,rp_ans) <- newChan @b
+  (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
+  let req = Request clsr sp_sp sp_ans
+
+  sendChan sp_req (SomeRequest req)
+
+  logText $ "receiving sp_input"
+  sp_input <- receiveChan rp_sp
+
+  rs <-
+    for inputs $ \input -> do
+      sendChan sp_input (Just input)
+      ans <- receiveChan rp_ans
+      logText $ "get answer = " <> T.pack (show ans)
+      pure ans
+  sendChan sp_input Nothing
+  pure rs
+
+mkclosure1 = do
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> a + b)
         `staticMap` cpure closureDict hidden
-      req = Request c sp_sp sp_ans
-
   logText $ "sending req with hidden: " <> T.pack (show h)
-  sendChan sp_req (SomeRequest req)
+  pure c
 
-  logText $ "receiving sp_input"
-  sp_input <- receiveChan rp_sp
-
-  for_ [4,5,6,7,8] $ \input -> do
-    sendChan sp_input (Just input)
-    ans <- receiveChan rp_ans
-    logText $ "get answer = " <> T.pack (show ans)
-    lift $ threadDelay 1200000
-  sendChan sp_input Nothing
-
-
-task2 :: SPort SomeRequest -> Managed ()
-task2 sp_req = do
-  (sp_ans,rp_ans) <- newChan @String
-  (sp_sp,rp_sp) <- newChan @(SPort (Maybe Int))
+mkclosure2 = do
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> show a ++ ":" ++ show b)
         `staticMap` cpure closureDict hidden
-      req = Request c sp_sp sp_ans
-
   logText $ "sending req with hidden: " <> T.pack (show h)
-  sendChan sp_req (SomeRequest req)
-
-  logText $ "receiving sp_input"
-  sp_input <- receiveChan rp_sp
-
-  for_ [100,200,300] $ \input -> do
-    sendChan sp_input (Just input)
-    ans <- receiveChan rp_ans
-    logText $ "get answer = " <> T.pack (show ans)
-    lift $ threadDelay 1200000
-  sendChan sp_input Nothing
-
+  pure c
 
 main :: IO ()
 main = do
