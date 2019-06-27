@@ -3,10 +3,10 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- {-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
 module Comm where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
@@ -190,5 +190,5 @@ sendChan (SPort i) x = do
   lift $ sendIMsg sock (IMsg i (toMsg x))
 
 receiveChan :: (Binary a) => RPort a -> Managed a
-receiveChan rp@(RPort _ chan) =
+receiveChan (RPort _ chan) =
   fromMsg <$> lift (atomically (readTChan chan))
