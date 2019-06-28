@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ExplicitNamespaces        #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE InstanceSigs              #-}
@@ -12,9 +13,10 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StaticPointers            #-}
 {-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
+-- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -25,12 +27,22 @@ import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Data.Binary (Binary(get))
 import Data.Binary.Get (Get)
+import Data.Foldable (traverse_)
 import Data.Functor.Static (staticMap)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
+import Data.Traversable (traverse)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
+                          , type HostName
+                          , type ServiceName
+                          , Socket
+                          , SockAddr
                           , connect
+                          , connectSock
+                          , closeSock
                           , serve
                           )
 import System.Environment (getArgs)
@@ -68,9 +80,9 @@ withStatic [d|
   |]
 
 
-slave :: IO ()
-slave = do
-  serve (Host "127.0.0.1") "3929" $ \(sock, remoteAddr) -> do
+slave :: HostName -> ServiceName -> IO ()
+slave hostName serviceName = do
+  serve (Host hostName) serviceName $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     runManaged sock $ do
       (_,rp_req) <- newChan -- fixed id = 0
@@ -88,19 +100,34 @@ slave = do
           logText $ "answer sent"
 
 
-master :: IO ()
-master = do
-  connect "127.0.0.1" "3929" $ \(sock, remoteAddr) -> do
-    putStrLn $ "Connection established to " ++ show remoteAddr
-    threadDelay 2500000
-    runManaged sock $ do
-      let sp_req = SPort 0
+newtype SocketPool = SocketPool {
+    sockPoolMap :: HashMap (HostName,ServiceName) (Socket,SockAddr)
+  }
 
-      rs1 <- replicateM 3 $ (mkclosure1 >>= \clsr -> callRequest sp_req clsr [1,2,3])
-      logText $ T.pack (show rs1)
-      rs2 <- replicateM 3 $ (mkclosure2 >>= \clsr -> callRequest sp_req clsr [100,200,300::Int])
-      logText $ T.pack (show rs2)
+master :: [(HostName,ServiceName)] -> IO ()
+master slaveList = do
+  -- let (hostName,serviceName) = head slaveList
+  SocketPool pool <-
+    SocketPool . HM.fromList <$>
+      traverse (\(h,s) -> fmap ((h,s),) (connectSock h s)) slaveList
+  -- connect hostName serviceName $ \(sock, remoteAddr) -> do
 
+  let Just (sock1,remoteAddr1) = HM.lookup ("127.0.0.1","3929") pool
+  let Just (sock2,remoteAddr2) = HM.lookup ("127.0.0.1","3939") pool
+
+  putStrLn $ "Connection established to " ++ show remoteAddr1
+  putStrLn $ "Connection established to " ++ show remoteAddr2
+
+  threadDelay 2500000
+  runManaged sock1 $ do
+    let sp_req = SPort 0
+
+    rs1 <- replicateM 3 $ (mkclosure1 >>= \clsr -> callRequest sp_req clsr [1,2,3])
+    logText $ T.pack (show rs1)
+    rs2 <- replicateM 3 $ (mkclosure2 >>= \clsr -> callRequest sp_req clsr [100,200,300::Int])
+    logText $ T.pack (show rs2)
+
+  traverse_ (closeSock . fst) pool
 
 mkclosure1 :: Managed (Closure (Int -> Int))
 mkclosure1 = do
@@ -124,5 +151,6 @@ main :: IO ()
 main = do
   a0:_ <- getArgs
   case a0 of
-    "slave"  -> slave
-    "master" -> master
+    "slave1"  -> slave "127.0.0.1" "3929"
+    "slave2"  -> slave "127.0.0.1" "3939"
+    "master" -> master [("127.0.0.1","3929"),("127.0.0.1","3939")]

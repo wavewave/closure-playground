@@ -5,17 +5,15 @@ with pkgs;
 let
   newHaskellPackages = haskellPackages.override {
     overrides = self: super: {
-      rank1dynamic = haskell.lib.dontCheck super.rank1dynamic;
-      bindynamic = haskell.lib.doJailbreak super.bindynamic;
     };
   };
   hsenv = newHaskellPackages.ghcWithPackages (p: with p; [
-    bindynamic
     containers
     distributed-closure
     network-simple
     monad-loops
     random
+    unordered-containers
   ]);
 in
 
