@@ -6,7 +6,12 @@
 {-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
 module Comm where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent     ( MVar
+                              , forkIO
+                              , newEmptyMVar
+                              , putMVar
+                              , takeMVar
+                              )
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
@@ -120,8 +125,8 @@ initChanState sock =
 
 type Managed = ReaderT ChanState IO
 
-router :: Managed ()
-router = void $ do
+router :: MVar () -> Managed ()
+router done = void $ do
   ChanState sock queue mref _ <- ask
   -- router
   lift $ forkIO $
@@ -130,12 +135,11 @@ router = void $ do
       m <- readTVarIO mref
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
-        -- logText
-        --   ("the following message is pushed to id: " <> T.pack (show i) <> "\n" <> T.pack (show msg))
-  -- receiver
-  lift $ forkIO $
+  lift $ forkIO $ do
     whileJust_ (recvIMsg sock) $ \imsg ->
       atomically $ writeTQueue queue imsg
+    putStrLn "HEELLLOOO"
+    putMVar done ()
 
 logger :: Managed ()
 logger = void $ do
@@ -149,9 +153,12 @@ runManaged :: Socket -> Managed () -> IO ()
 runManaged sock action = do
   chst <- initChanState sock
   void $ flip runReaderT chst $ do
-    router
+    done <- lift $ newEmptyMVar
+    router done
     logger
     action
+    lift $ putStrLn "HEELLLOOO-HERE"
+    lift $ takeMVar done
 
 -------------
 -- Logging --
