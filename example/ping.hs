@@ -9,6 +9,7 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
+-- import Control.Concurrent.Async (async,wait)
 import Control.Distributed.Closure (Closure, cpure, closureDict)
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (replicateM)
@@ -24,11 +25,13 @@ import GHC.Generics (Generic)
 import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
 import System.Random (randomIO)
+import UnliftIO.Async (async,wait)
 --
 import Comm ( Managed
             , NodeName(..)
             , SPort(..)
             , logText
+            -- , runInIO
             )
 import MasterSlave (master,slave)
 import Request ( Request(..)
@@ -52,7 +55,6 @@ withStatic [d|
   instance Binary SerializableInt
   instance Typeable SerializableInt
   |]
-
 
 mkclosure1 :: Managed (Closure (Int -> Int))
 mkclosure1 = do
@@ -82,11 +84,18 @@ process = do
   master nodeList$ do
     let sp_req1 = SPort (NodeName "slave1") 0
         sp_req2 = SPort (NodeName "slave2") 0
-    rs1 <- replicateM 3 $ (liftIO (threadDelay 1000000) >> mkclosure1 >>= \clsr -> callRequest sp_req1 clsr [1,2,3])
+    a1 <-async $
+             replicateM 3 $ do
+               liftIO (threadDelay 1000000)
+               mkclosure1 >>= \clsr -> callRequest sp_req1 clsr [1,2,3]
+    a2 <-async $
+             replicateM 3 $ do
+               liftIO (threadDelay 1000000)
+               mkclosure2 >>= \clsr -> callRequest sp_req2 clsr [100,200,300::Int]
+    rs1 <- wait a1
+    rs2 <- wait a2
     logText $ T.pack (show rs1)
-    rs2 <- replicateM 3 $ (liftIO (threadDelay 1000000) >> mkclosure2 >>= \clsr -> callRequest sp_req2 clsr [100,200,300::Int])
     logText $ T.pack (show rs2)
-
 
 main :: IO ()
 main = do

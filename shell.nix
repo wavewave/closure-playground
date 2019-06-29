@@ -13,6 +13,7 @@ let
     network-simple
     monad-loops
     random
+    unliftio
     unordered-containers
   ]);
 in

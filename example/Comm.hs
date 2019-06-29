@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
 module Comm where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO) -- newEmptyMVar,putMVar,takeMVar
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
@@ -134,6 +134,7 @@ initChanState name pool =
 
 
 type Managed = ReaderT ChanState IO
+
 
 router :: Managed ()
 router = void $ do
