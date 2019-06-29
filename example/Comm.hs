@@ -5,10 +5,10 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-unused-do-bind #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 module Comm where
 
-import Control.Concurrent (forkIO) -- newEmptyMVar,putMVar,takeMVar
+import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
@@ -132,23 +132,19 @@ initChanState :: NodeName -> SocketPool -> IO ChanState
 initChanState name pool =
   ChanState name pool <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
 
-
 type Managed = ReaderT ChanState IO
-
 
 router :: Managed ()
 router = void $ do
   ChanState _ pool queue mref _ <- ask
-  -- router
-  lift $ forkIO $
+  -- routing message to channel
+  void $ lift $ forkIO $
     forever $ do
       IMsg i msg <- atomically $ readTQueue queue
       m <- readTVarIO mref
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
-        -- logText
-        --   ("the following message is pushed to id: " <> T.pack (show i) <> "\n" <> T.pack (show msg))
-  -- receiver
+  -- receiving gateway
   let SocketPool sockmap = pool
   for_ sockmap $ \(sock,_) ->
     lift $ forkIO $

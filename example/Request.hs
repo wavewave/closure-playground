@@ -34,6 +34,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Comm ( Managed
             , NodeName
             , SPort(..)
+            , RPort(..)
             , receiveChan
             , sendChan
             , newChan
@@ -81,20 +82,18 @@ handleRequest (PureRequest cl _ _) input =
   let fun = unclosure cl
   in pure $ fun input
 
-
-callRequest ::
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
-  => SPort SomeRequest -> Closure (a -> b) -> [a] -> Managed [b]
-callRequest sp_req clsr inputs = do
-  (sp_ans,rp_ans) <- newChan @b
-  (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
-  let req = PureRequest clsr sp_sp sp_ans
-
-  sendChan sp_req (SomeRequest req)
-
+processRequest ::
+     (Serializable a, Serializable b, Show a, Show b)
+  => SPort SomeRequest
+  -> SomeRequest
+  -> RPort (SPort (Maybe a))
+  -> RPort b
+  -> [a]
+  -> Managed [b]
+processRequest sp_req sreq rp_sp rp_ans inputs = do
+  sendChan sp_req sreq
   logText $ "receiving sp_input"
   sp_input <- receiveChan rp_sp
-
   rs <-
     for inputs $ \input -> do
       sendChan sp_input (Just input)
@@ -103,6 +102,15 @@ callRequest sp_req clsr inputs = do
       pure ans
   sendChan sp_input Nothing
   pure rs
+
+callRequest ::
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => SPort SomeRequest -> Closure (a -> b) -> [a] -> Managed [b]
+callRequest sp_req clsr inputs = do
+  (sp_ans,rp_ans) <- newChan @b
+  (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
+  let req = PureRequest clsr sp_sp sp_ans
+  processRequest sp_req (SomeRequest req) rp_sp rp_ans inputs
 
 requestTo ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
