@@ -31,6 +31,7 @@ import Data.Foldable (traverse_)
 import Data.Functor.Static (staticMap)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.List as L
 import qualified Data.Text as T
 import Data.Traversable (traverse)
 import Data.Typeable (Typeable)
@@ -49,6 +50,8 @@ import System.Environment (getArgs)
 import System.Random (randomIO)
 --
 import Comm ( Managed
+            , NodeName(..)
+            , SocketPool(..)
             , SPort(..)
             , receiveChan
             , sendChan
@@ -100,20 +103,17 @@ slave hostName serviceName = do
           logText $ "answer sent"
 
 
-newtype SocketPool = SocketPool {
-    sockPoolMap :: HashMap (HostName,ServiceName) (Socket,SockAddr)
-  }
 
-master :: [(HostName,ServiceName)] -> IO ()
+master :: [(NodeName,(HostName,ServiceName))] -> IO ()
 master slaveList = do
   -- let (hostName,serviceName) = head slaveList
   SocketPool pool <-
     SocketPool . HM.fromList <$>
-      traverse (\(h,s) -> fmap ((h,s),) (connectSock h s)) slaveList
+      traverse (\(n,(h,s)) -> fmap (n,) (connectSock h s)) slaveList
   -- connect hostName serviceName $ \(sock, remoteAddr) -> do
 
-  let Just (sock1,remoteAddr1) = HM.lookup ("127.0.0.1","3929") pool
-  let Just (sock2,remoteAddr2) = HM.lookup ("127.0.0.1","3939") pool
+  let Just (sock1,remoteAddr1) = HM.lookup (NodeName "slave1") pool
+  let Just (sock2,remoteAddr2) = HM.lookup (NodeName "slave2") pool
 
   putStrLn $ "Connection established to " ++ show remoteAddr1
   putStrLn $ "Connection established to " ++ show remoteAddr2
@@ -147,10 +147,17 @@ mkclosure2 = do
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 
+nodeList :: [(NodeName,(HostName,ServiceName))]
+nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
+           , (NodeName "slave2", ("127.0.0.1", "3939"))
+           ]
+
 main :: IO ()
 main = do
   a0:_ <- getArgs
   case a0 of
-    "slave1"  -> slave "127.0.0.1" "3929"
-    "slave2"  -> slave "127.0.0.1" "3939"
-    "master" -> master [("127.0.0.1","3929"),("127.0.0.1","3939")]
+    "master" -> master nodeList
+    _ -> let nname = NodeName (T.pack a0)
+         in case L.lookup nname nodeList of
+              Just (hostName,serviceName) -> slave hostName serviceName
+              Nothing -> error $ "cannot find " ++ a0

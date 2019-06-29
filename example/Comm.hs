@@ -30,13 +30,15 @@ import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Foldable (for_)
+import Data.Hashable (Hashable)
+import Data.HashMap.Strict (HashMap)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
-import Network.Simple.TCP (Socket, recv, send)
+import Network.Simple.TCP (Socket, SockAddr, recv, send)
 
 data BinProxy a = BinProxy
 
@@ -105,6 +107,14 @@ sendIMsg sock (IMsg i (Msg sz pl)) = do
 -------------
 -- Managed --
 -------------
+
+newtype NodeName = NodeName { unNodeName :: Text }
+                 deriving (Show, Eq, Hashable)
+
+newtype SocketPool = SocketPool {
+    sockPoolMap :: HashMap NodeName (Socket,SockAddr)
+  }
+
 
 data ChanState = ChanState {
     chSocket :: Socket
