@@ -2,6 +2,7 @@
 {-# LANGUAGE ExplicitNamespaces        #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StaticPointers            #-}
 {-# LANGUAGE TemplateHaskell           #-}
 
@@ -9,7 +10,7 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
-import Control.Distributed.Closure (Closure, cpure, closureDict)
+import Control.Distributed.Closure (Closure, cap, cpure, closure, closureDict)
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (replicateM)
 import Control.Monad.IO.Class (liftIO)
@@ -54,6 +55,15 @@ withStatic [d|
   instance Typeable SerializableInt
   |]
 
+{-
+newtype SerializableFunction = SF (Int -> Int) deriving (Generic, Typeable)
+withStatic [d|
+  instance Binary SerializableFunction
+  instance Typeable SerializableFunction
+  |]
+-}
+
+
 mkclosure1 :: Managed (Closure (Int -> Int))
 mkclosure1 = do
   h <- lift $ randomIO
@@ -86,6 +96,24 @@ mkclosure3 = do
   pure c
 
 
+-- test for sending arbitrary IO action
+mkclosure4 :: Managed (Closure (Int -> Managed String))
+mkclosure4 = do
+  -- h <- lift $ randomIO
+  let func x = x + 10
+  let -- hidden = SI h
+      c1 = closure $ static (\(f :: Int->Int) (b :: Int) -> do
+                                let x = show (f 1) ++ ":" ++ show b
+                                logText ("nuclear missile launched with " <> T.pack (show x))
+                                pure (x :: String)
+                            )
+      c = c1 `cap` closure (static func)
+
+--            `cap` static func -- closureDict (SF func)
+  -- logText $ "sending req with hidden: " <> T.pack (show h)
+  pure c
+
+
 nodeList :: [(NodeName,(HostName,ServiceName))]
 nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
            , (NodeName "slave2", ("127.0.0.1", "3939"))
@@ -106,12 +134,20 @@ process = do
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure3 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
+
+    a4 <-async $
+             replicateM 3 $ do
+               liftIO (threadDelay 1000000)
+               mkclosure4 >>= \clsr -> requestToM (NodeName "slave1") clsr [100,200,300::Int]
+
     rs1 <- wait a1
     rs2 <- wait a2
     rs3 <- wait a3
+    rs4 <- wait a4
     logText $ T.pack (show rs1)
     logText $ T.pack (show rs2)
     logText $ T.pack (show rs3)
+    logText $ T.pack (show rs4)
 
 main :: IO ()
 main = do
