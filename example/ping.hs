@@ -35,6 +35,7 @@ import Request ( Request(..)
                , SomeRequest(..)
                , StaticSomeRequest(..)
                , requestTo
+               , requestIOTo
                )
 
 
@@ -71,6 +72,19 @@ mkclosure2 = do
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 
+-- test for sending arbitrary IO action
+mkclosure3 :: Managed (Closure (Int -> IO String))
+mkclosure3 = do
+  h <- lift $ randomIO
+  let hidden = SI h
+      c = static (\(SI a) b -> let x = show a ++ ":" ++ show b
+                               in putStrLn ("nuclear missile launched with " ++ x) >> pure x
+                 )
+        `staticMap` cpure closureDict hidden
+  logText $ "sending req with hidden: " <> T.pack (show h)
+  pure c
+
+
 nodeList :: [(NodeName,(HostName,ServiceName))]
 nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
            , (NodeName "slave2", ("127.0.0.1", "3939"))
@@ -87,10 +101,16 @@ process = do
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure2 >>= \clsr -> requestTo (NodeName "slave2") clsr [100,200,300::Int]
+    a3 <-async $
+             replicateM 3 $ do
+               liftIO (threadDelay 1000000)
+               mkclosure3 >>= \clsr -> requestIOTo (NodeName "slave2") clsr [100,200,300::Int]
     rs1 <- wait a1
     rs2 <- wait a2
+    rs3 <- wait a3
     logText $ T.pack (show rs1)
     logText $ T.pack (show rs2)
+    logText $ T.pack (show rs3)
 
 main :: IO ()
 main = do

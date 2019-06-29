@@ -43,7 +43,9 @@ slave node hostName serviceName = do
       (_,rp_req) <- newChan -- fixed id = 0
       forever $ do
         SomeRequest req <- receiveChan rp_req
-        let PureRequest _ sp_sp sp_ans = req
+        let (sp_sp,sp_ans) = case req of
+                               PureRequest _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
+                               IORequest   _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
         (sp_input,rp_input) <- newChan
         logText $ "sp_input sent:"
         sendChan sp_sp sp_input

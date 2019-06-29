@@ -43,7 +43,8 @@ import Comm ( Managed
 
 -- | Request type
 data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
-                   deriving (Generic, Typeable)
+                 | IORequest (Closure (a -> IO b)) (SPort (SPort (Maybe a))) (SPort b)
+                 deriving (Generic, Typeable)
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
 
@@ -81,6 +82,9 @@ handleRequest ::
 handleRequest (PureRequest cl _ _) input =
   let fun = unclosure cl
   in pure $ fun input
+handleRequest (IORequest cl _ _) input =
+  let action = unclosure cl
+  in action input
 
 processRequest ::
      (Serializable a, Serializable b, Show a, Show b)
@@ -112,9 +116,26 @@ callRequest sp_req clsr inputs = do
   let req = PureRequest clsr sp_sp sp_ans
   processRequest sp_req (SomeRequest req) rp_sp rp_ans inputs
 
+callRequestIO ::
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => SPort SomeRequest -> Closure (a -> IO b) -> [a] -> Managed [b]
+callRequestIO sp_req clsr inputs = do
+  (sp_ans,rp_ans) <- newChan @b
+  (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
+  let req = IORequest clsr sp_sp sp_ans
+  processRequest sp_req (SomeRequest req) rp_sp rp_ans inputs
+
+
 requestTo ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
   => NodeName -> Closure (a -> b) -> [a] -> Managed [b]
 requestTo node clsr inputs =
   let sp_req = SPort node 0 -- 0 is a special channel id.
   in callRequest sp_req clsr inputs
+
+requestIOTo ::
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => NodeName -> Closure (a -> IO b) -> [a] -> Managed [b]
+requestIOTo node clsr inputs =
+  let sp_req = SPort node 0 -- 0 is a special channel id.
+  in callRequestIO sp_req clsr inputs
