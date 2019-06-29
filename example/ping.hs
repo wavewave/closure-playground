@@ -9,7 +9,6 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
--- import Control.Concurrent.Async (async,wait)
 import Control.Distributed.Closure (Closure, cpure, closureDict)
 import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (replicateM)
@@ -29,15 +28,13 @@ import UnliftIO.Async (async,wait)
 --
 import Comm ( Managed
             , NodeName(..)
-            , SPort(..)
             , logText
-            -- , runInIO
             )
 import MasterSlave (master,slave)
 import Request ( Request(..)
                , SomeRequest(..)
                , StaticSomeRequest(..)
-               , callRequest
+               , requestTo
                )
 
 
@@ -82,16 +79,14 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
 process :: IO ()
 process = do
   master nodeList$ do
-    let sp_req1 = SPort (NodeName "slave1") 0
-        sp_req2 = SPort (NodeName "slave2") 0
     a1 <-async $
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
-               mkclosure1 >>= \clsr -> callRequest sp_req1 clsr [1,2,3]
+               mkclosure1 >>= \clsr -> requestTo (NodeName "slave1") clsr [1,2,3]
     a2 <-async $
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
-               mkclosure2 >>= \clsr -> callRequest sp_req2 clsr [100,200,300::Int]
+               mkclosure2 >>= \clsr -> requestTo (NodeName "slave2") clsr [100,200,300::Int]
     rs1 <- wait a1
     rs2 <- wait a2
     logText $ T.pack (show rs1)

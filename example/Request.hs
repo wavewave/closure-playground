@@ -32,6 +32,7 @@ import GHC.StaticPtr (StaticPtr,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import System.IO.Unsafe (unsafePerformIO)
 --
 import Comm ( Managed
+            , NodeName
             , SPort(..)
             , receiveChan
             , sendChan
@@ -100,3 +101,10 @@ callRequest sp_req clsr inputs = do
       pure ans
   sendChan sp_input Nothing
   pure rs
+
+requestTo ::
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => NodeName -> Closure (a -> b) -> [a] -> Managed [b]
+requestTo node clsr inputs =
+  let sp_req = SPort node 0 -- 0 is a special channel id.
+  in callRequest sp_req clsr inputs
