@@ -1,7 +1,7 @@
 {-# LANGUAGE ExplicitNamespaces        #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 module MasterSlave where
 
 import Control.Monad (forever)
@@ -43,7 +43,7 @@ slave node hostName serviceName = do
       (_,rp_req) <- newChan -- fixed id = 0
       forever $ do
         SomeRequest req <- receiveChan rp_req
-        let Request _ sp_sp sp_ans = req
+        let PureRequest _ sp_sp sp_ans = req
         (sp_input,rp_input) <- newChan
         logText $ "sp_input sent:"
         sendChan sp_sp sp_input

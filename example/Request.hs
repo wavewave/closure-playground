@@ -41,7 +41,7 @@ import Comm ( Managed
             )
 
 -- | Request type
-data Request a b = Request (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
+data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
                    deriving (Generic, Typeable)
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
@@ -50,7 +50,9 @@ instance (Serializable a, Serializable b) => Binary (Request a b)
 -- ref: https://github.com/haskell-distributed/cloud-haskell/issues/7
 --      http://neilmitchell.blogspot.com/2017/09/existential-serialisation.html
 -- | existential request type
-data SomeRequest = forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b) => SomeRequest (Request a b)
+data SomeRequest =
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+  => SomeRequest (Request a b)
 
 class StaticSomeRequest a where
   staticSomeRequest :: a -> StaticPtr (Get SomeRequest)
@@ -75,7 +77,7 @@ handleRequest ::
   => Request a b
   -> a
   -> IO b
-handleRequest (Request cl _ _) input =
+handleRequest (PureRequest cl _ _) input =
   let fun = unclosure cl
   in pure $ fun input
 
@@ -86,7 +88,7 @@ callRequest ::
 callRequest sp_req clsr inputs = do
   (sp_ans,rp_ans) <- newChan @b
   (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
-  let req = Request clsr sp_sp sp_ans
+  let req = PureRequest clsr sp_sp sp_ans
 
   sendChan sp_req (SomeRequest req)
 
