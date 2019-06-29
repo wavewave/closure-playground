@@ -162,10 +162,10 @@ logger = void $ do
       txt <- atomically $ readTQueue lq
       TIO.putStrLn txt
 
-runManaged :: NodeName -> SocketPool -> Managed () -> IO ()
+runManaged :: NodeName -> SocketPool -> Managed a -> IO a
 runManaged name pool action = do
   chst <- initChanState name pool
-  void $ flip runReaderT chst $ do
+  flip runReaderT chst $ do
     router
     logger
     action
