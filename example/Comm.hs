@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -32,12 +34,14 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
+import GHC.Generics (Generic)
 import Network.Simple.TCP (Socket, SockAddr, recv, send)
 
 data BinProxy a = BinProxy
@@ -109,7 +113,7 @@ sendIMsg sock (IMsg i (Msg sz pl)) = do
 -------------
 
 newtype NodeName = NodeName { unNodeName :: Text }
-                 deriving (Show, Eq, Hashable)
+                 deriving (Show, Eq, Hashable, Binary, Typeable)
 
 newtype SocketPool = SocketPool {
     sockPoolMap :: HashMap NodeName (Socket,SockAddr)
@@ -117,22 +121,23 @@ newtype SocketPool = SocketPool {
 
 
 data ChanState = ChanState {
-    chSocket :: Socket
+    chName :: NodeName
+  , chSockets :: SocketPool
   , chQueue :: TQueue IMsg
   , chChanMap :: TVar (Map Word32 (TChan Msg))
   , chLogQueue :: TQueue Text
   }
 
-initChanState :: Socket -> IO ChanState
-initChanState sock =
-  ChanState sock <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
+initChanState :: NodeName -> SocketPool -> IO ChanState
+initChanState name pool =
+  ChanState name pool <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
 
 
 type Managed = ReaderT ChanState IO
 
 router :: Managed ()
 router = void $ do
-  ChanState sock queue mref _ <- ask
+  ChanState _ pool queue mref _ <- ask
   -- router
   lift $ forkIO $
     forever $ do
@@ -143,9 +148,11 @@ router = void $ do
         -- logText
         --   ("the following message is pushed to id: " <> T.pack (show i) <> "\n" <> T.pack (show msg))
   -- receiver
-  lift $ forkIO $
-    whileJust_ (recvIMsg sock) $ \imsg ->
-      atomically $ writeTQueue queue imsg
+  let SocketPool sockmap = pool
+  for_ sockmap $ \(sock,_) ->
+    lift $ forkIO $
+      whileJust_ (recvIMsg sock) $ \imsg ->
+        atomically $ writeTQueue queue imsg
 
 logger :: Managed ()
 logger = void $ do
@@ -155,9 +162,9 @@ logger = void $ do
       txt <- atomically $ readTQueue lq
       TIO.putStrLn txt
 
-runManaged :: Socket -> Managed () -> IO ()
-runManaged sock action = do
-  chst <- initChanState sock
+runManaged :: NodeName -> SocketPool -> Managed () -> IO ()
+runManaged name pool action = do
+  chst <- initChanState name pool
   void $ flip runReaderT chst $ do
     router
     logger
@@ -176,13 +183,22 @@ logText txt = do
 -- Channel --
 -------------
 
-newtype SPort a = SPort Word32 deriving (Binary, Typeable)
+data SPort a = SPort {
+    spNodeId :: NodeName
+  , spChanId :: Word32
+  }
+  deriving (Generic,Typeable)
 
-data RPort a = RPort Word32 (TChan Msg)
+instance Binary (SPort a)
+
+data RPort a = RPort {
+    rpChanId :: Word32
+  , rpChannel :: TChan Msg
+  }
 
 newChan :: Managed (SPort a, RPort a)
 newChan = do
-  ChanState _ _ mref _ <- ask
+  ChanState self _ _ mref _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref
@@ -191,13 +207,16 @@ newChan = do
       ch <- newTChan
       let !m' = M.insert newid ch m
       writeTVar mref m'
-      pure (SPort newid, RPort newid ch)
+      pure (SPort self newid, RPort newid ch)
 
 
 sendChan :: (Binary a) => SPort a -> a -> Managed ()
-sendChan (SPort i) x = do
-  sock <- chSocket <$> ask
-  lift $ sendIMsg sock (IMsg i (toMsg x))
+sendChan (SPort n i) x = do
+  SocketPool sockMap <- chSockets <$> ask
+  case HM.lookup n sockMap of
+    Nothing -> logText "connection doesn't exist"
+    Just (sock,_) ->
+      lift $ sendIMsg sock (IMsg i (toMsg x))
 
 receiveChan :: (Binary a) => RPort a -> Managed a
 receiveChan (RPort _ chan) =

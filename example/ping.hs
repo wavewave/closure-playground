@@ -16,7 +16,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 
--- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -29,7 +29,7 @@ import Data.Binary (Binary(get))
 import Data.Binary.Get (Get)
 import Data.Foldable (traverse_)
 import Data.Functor.Static (staticMap)
-import Data.HashMap.Strict (HashMap)
+-- import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import qualified Data.Text as T
@@ -39,9 +39,6 @@ import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
                           , type HostName
                           , type ServiceName
-                          , Socket
-                          , SockAddr
-                          , connect
                           , connectSock
                           , closeSock
                           , serve
@@ -83,11 +80,12 @@ withStatic [d|
   |]
 
 
-slave :: HostName -> ServiceName -> IO ()
-slave hostName serviceName = do
+slave :: NodeName -> HostName -> ServiceName -> IO ()
+slave node hostName serviceName = do
   serve (Host hostName) serviceName $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
-    runManaged sock $ do
+    let pool = SocketPool $ HM.fromList [(NodeName "master",(sock,remoteAddr))]
+    runManaged node pool $ do
       (_,rp_req) <- newChan -- fixed id = 0
       forever $ do
         SomeRequest req <- receiveChan rp_req
@@ -106,28 +104,20 @@ slave hostName serviceName = do
 
 master :: [(NodeName,(HostName,ServiceName))] -> IO ()
 master slaveList = do
-  -- let (hostName,serviceName) = head slaveList
-  SocketPool pool <-
+  pool <-
     SocketPool . HM.fromList <$>
       traverse (\(n,(h,s)) -> fmap (n,) (connectSock h s)) slaveList
-  -- connect hostName serviceName $ \(sock, remoteAddr) -> do
-
-  let Just (sock1,remoteAddr1) = HM.lookup (NodeName "slave1") pool
-  let Just (sock2,remoteAddr2) = HM.lookup (NodeName "slave2") pool
-
-  putStrLn $ "Connection established to " ++ show remoteAddr1
-  putStrLn $ "Connection established to " ++ show remoteAddr2
 
   threadDelay 2500000
-  runManaged sock1 $ do
-    let sp_req = SPort 0
-
-    rs1 <- replicateM 3 $ (mkclosure1 >>= \clsr -> callRequest sp_req clsr [1,2,3])
+  runManaged (NodeName "master") pool $ do
+    let sp_req1 = SPort (NodeName "slave1") 0
+        sp_req2 = SPort (NodeName "slave2") 0
+    rs1 <- replicateM 3 $ (mkclosure1 >>= \clsr -> callRequest sp_req1 clsr [1,2,3])
     logText $ T.pack (show rs1)
-    rs2 <- replicateM 3 $ (mkclosure2 >>= \clsr -> callRequest sp_req clsr [100,200,300::Int])
+    rs2 <- replicateM 3 $ (mkclosure2 >>= \clsr -> callRequest sp_req2 clsr [100,200,300::Int])
     logText $ T.pack (show rs2)
 
-  traverse_ (closeSock . fst) pool
+  traverse_ (closeSock . fst) $ sockPoolMap pool
 
 mkclosure1 :: Managed (Closure (Int -> Int))
 mkclosure1 = do
@@ -157,7 +147,7 @@ main = do
   a0:_ <- getArgs
   case a0 of
     "master" -> master nodeList
-    _ -> let nname = NodeName (T.pack a0)
-         in case L.lookup nname nodeList of
-              Just (hostName,serviceName) -> slave hostName serviceName
+    _ -> let name = NodeName (T.pack a0)
+         in case L.lookup name nodeList of
+              Just (hostName,serviceName) -> slave name hostName serviceName
               Nothing -> error $ "cannot find " ++ a0
