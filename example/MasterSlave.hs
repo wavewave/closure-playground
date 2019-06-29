@@ -6,7 +6,6 @@ module MasterSlave where
 
 import Control.Monad (forever)
 import Control.Monad.Loops (whileJust_)
-import Control.Monad.Trans.Class (lift)
 import Data.Foldable (traverse_)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
@@ -45,13 +44,13 @@ slave node hostName serviceName = do
         SomeRequest req <- receiveChan rp_req
         let (sp_sp,sp_ans) = case req of
                                PureRequest _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
-                               IORequest   _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
+                               MRequest    _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
         (sp_input,rp_input) <- newChan
         logText $ "sp_input sent:"
         sendChan sp_sp sp_input
         whileJust_ (receiveChan rp_input) $ \input -> do
           logText $ "requested for input: " <> T.pack (show input)
-          ans <- lift $ handleRequest req input
+          ans <- handleRequest req input
           logText $ "request handled with answer: " <> T.pack (show ans)
           sendChan sp_ans ans
           logText $ "answer sent"
