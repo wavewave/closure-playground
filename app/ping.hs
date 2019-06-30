@@ -55,15 +55,6 @@ withStatic [d|
   instance Typeable SerializableInt
   |]
 
-{-
-newtype SerializableFunction = SF (Int -> Int) deriving (Generic, Typeable)
-withStatic [d|
-  instance Binary SerializableFunction
-  instance Typeable SerializableFunction
-  |]
--}
-
-
 mkclosure1 :: Managed (Closure (Int -> Int))
 mkclosure1 = do
   h <- lift $ randomIO
@@ -112,7 +103,6 @@ mkclosure4 = do
 mkclosure5 :: Managed (Closure (Int -> Managed String))
 mkclosure5 = do
   h <- lift $ randomRIO (0,10)
-  -- let func x = x + h
   logText $ "h = " <> T.pack (show h)
   let c1 = closure $ static \(f :: Int->Int) (b :: Int) -> do
                                let x = show (f 1) ++ ":" ++ show b
@@ -131,7 +121,7 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
 process :: IO ()
 process = do
   master nodeList$ do
-{-    a1 <-async $
+    a1 <-async $
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure1 >>= \clsr -> requestTo (NodeName "slave1") clsr [1,2,3]
@@ -148,24 +138,22 @@ process = do
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure4 >>= \clsr -> requestToM (NodeName "slave1") clsr [100,200,300::Int]
--}
     a5 <-async $
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure5 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
 
 
-  {-  rs1 <- wait a1
+    rs1 <- wait a1
     rs2 <- wait a2
     rs3 <- wait a3
-    rs4 <- wait a4 -}
+    rs4 <- wait a4
     rs5 <- wait a5
 
-    {-
     logText $ T.pack (show rs1)
     logText $ T.pack (show rs2)
     logText $ T.pack (show rs3)
-    logText $ T.pack (show rs4) -}
+    logText $ T.pack (show rs4)
     logText $ T.pack (show rs5)
 
 
