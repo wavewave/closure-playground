@@ -8,6 +8,7 @@ let
     };
   };
   hsenv = newHaskellPackages.ghcWithPackages (p: with p; [
+    cabal-install
     containers
     distributed-closure
     network-simple

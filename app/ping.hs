@@ -6,7 +6,7 @@
 {-# LANGUAGE StaticPointers            #-}
 {-# LANGUAGE TemplateHaskell           #-}
 
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
+-- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -24,7 +24,7 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
-import System.Random (randomIO)
+import System.Random (randomIO,randomRIO)
 import UnliftIO.Async (async,wait)
 --
 import Comm ( Managed
@@ -96,22 +96,31 @@ mkclosure3 = do
   pure c
 
 
--- test for sending arbitrary IO action
+-- higher order function
 mkclosure4 :: Managed (Closure (Int -> Managed String))
 mkclosure4 = do
-  -- h <- lift $ randomIO
   let func x = x + 10
   let -- hidden = SI h
-      c1 = closure $ static (\(f :: Int->Int) (b :: Int) -> do
-                                let x = show (f 1) ++ ":" ++ show b
-                                logText ("nuclear missile launched with " <> T.pack (show x))
-                                pure (x :: String)
-                            )
+      c1 = closure $ static \(f :: Int->Int) (b :: Int) -> do
+                               let x = show (f 1) ++ ":" ++ show b
+                               logText ("nuclear missile launched with " <> T.pack (show x))
+                               pure (x :: String)
       c = c1 `cap` closure (static func)
-
---            `cap` static func -- closureDict (SF func)
-  -- logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
+
+-- test for sending arbitrary IO action
+mkclosure5 :: Managed (Closure (Int -> Managed String))
+mkclosure5 = do
+  h <- lift $ randomRIO (0,10)
+  -- let func x = x + h
+  logText $ "h = " <> T.pack (show h)
+  let c1 = closure $ static \(f :: Int->Int) (b :: Int) -> do
+                               let x = show (f 1) ++ ":" ++ show b
+                               logText ("nuclear missile launched with " <> T.pack (show x))
+                               pure (x :: String)
+      f1 = closure (static (\(SI h') x -> x + h')) `cap` cpure closureDict (SI h)
+      clsr = c1 `cap` f1
+  pure clsr
 
 
 nodeList :: [(NodeName,(HostName,ServiceName))]
@@ -122,7 +131,7 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
 process :: IO ()
 process = do
   master nodeList$ do
-    a1 <-async $
+{-    a1 <-async $
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure1 >>= \clsr -> requestTo (NodeName "slave1") clsr [1,2,3]
@@ -139,15 +148,26 @@ process = do
              replicateM 3 $ do
                liftIO (threadDelay 1000000)
                mkclosure4 >>= \clsr -> requestToM (NodeName "slave1") clsr [100,200,300::Int]
+-}
+    a5 <-async $
+             replicateM 3 $ do
+               liftIO (threadDelay 1000000)
+               mkclosure5 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
 
-    rs1 <- wait a1
+
+  {-  rs1 <- wait a1
     rs2 <- wait a2
     rs3 <- wait a3
-    rs4 <- wait a4
+    rs4 <- wait a4 -}
+    rs5 <- wait a5
+
+    {-
     logText $ T.pack (show rs1)
     logText $ T.pack (show rs2)
     logText $ T.pack (show rs3)
-    logText $ T.pack (show rs4)
+    logText $ T.pack (show rs4) -}
+    logText $ T.pack (show rs5)
+
 
 main :: IO ()
 main = do
