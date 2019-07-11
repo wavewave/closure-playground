@@ -27,17 +27,17 @@ import System.Environment (getArgs)
 import System.Random (randomIO,randomRIO)
 import UnliftIO.Async (async,wait)
 --
-import Comm ( Managed
-            , NodeName(..)
-            , logText
-            )
-import MasterSlave (master,slave)
-import Request ( Request(..)
-               , SomeRequest(..)
-               , StaticSomeRequest(..)
-               , requestTo
-               , requestToM
-               )
+import Control.Distributed.Playground.Comm ( Managed
+                                           , NodeName(..)
+                                           , logText
+                                           )
+import Control.Distributed.Playground.MasterSlave (master,slave)
+import Control.Distributed.Playground.Request ( Request(..)
+                                              , SomeRequest(..)
+                                              , StaticSomeRequest(..)
+                                              , requestTo
+                                              , requestToM
+                                              )
 
 
 instance StaticSomeRequest (Request Int Int) where

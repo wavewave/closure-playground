@@ -6,7 +6,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wall -Werror #-}
-module Comm where
+module Control.Distributed.Playground.Comm where
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( TChan

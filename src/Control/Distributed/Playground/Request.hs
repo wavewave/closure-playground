@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeApplications          #-}
 
 {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
-module Request where
+module Control.Distributed.Playground.Request where
 
 import Control.Distributed.Closure ( Closure
                                    , Serializable
@@ -23,15 +23,15 @@ import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticPtr,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import System.IO.Unsafe (unsafePerformIO)
 --
-import Comm ( Managed
-            , NodeName
-            , SPort(..)
-            , RPort(..)
-            , receiveChan
-            , sendChan
-            , newChan
-            , logText
-            )
+import Control.Distributed.Playground.Comm ( Managed
+                                           , NodeName
+                                           , SPort(..)
+                                           , RPort(..)
+                                           , receiveChan
+                                           , sendChan
+                                           , newChan
+                                           , logText
+                                           )
 
 -- | Request type
 data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)

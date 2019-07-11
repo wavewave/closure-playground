@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC -Wall -Werror #-}
-module MasterSlave where
+module Control.Distributed.Playground.MasterSlave where
 
 import Control.Monad (forever)
 import Control.Monad.Loops (whileJust_)
@@ -18,19 +18,19 @@ import Network.Simple.TCP ( HostPreference(Host)
                           , serve
                           )
 --
-import Comm ( Managed
-            , NodeName(..)
-            , SocketPool(..)
-            , receiveChan
-            , sendChan
-            , newChan
-            , runManaged
-            , logText
-            )
-import Request ( Request(..)
-               , SomeRequest(..)
-               , handleRequest
-               )
+import Control.Distributed.Playground.Comm ( Managed
+                                           , NodeName(..)
+                                           , SocketPool(..)
+                                           , receiveChan
+                                           , sendChan
+                                           , newChan
+                                           , runManaged
+                                           , logText
+                                            )
+import Control.Distributed.Playground.Request ( Request(..)
+                                              , SomeRequest(..)
+                                              , handleRequest
+                                              )
 
 
 slave :: NodeName -> HostName -> ServiceName -> IO ()
