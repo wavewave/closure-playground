@@ -27,7 +27,7 @@ import System.Environment (getArgs)
 import System.Random (randomIO,randomRIO)
 import UnliftIO.Async (async,wait)
 --
-import Control.Distributed.Playground.Comm ( Managed
+import Control.Distributed.Playground.Comm ( M
                                            , NodeName(..)
                                            , logText
                                            )
@@ -55,7 +55,7 @@ withStatic [d|
   instance Typeable SerializableInt
   |]
 
-mkclosure1 :: Managed (Closure (Int -> Int))
+mkclosure1 :: M (Closure (Int -> Int))
 mkclosure1 = do
   h <- lift $ randomIO
   let hidden = SI h
@@ -64,7 +64,7 @@ mkclosure1 = do
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 
-mkclosure2 :: Managed (Closure (Int -> String))
+mkclosure2 :: M (Closure (Int -> String))
 mkclosure2 = do
   h <- lift $ randomIO
   let hidden = SI h
@@ -74,7 +74,7 @@ mkclosure2 = do
   pure c
 
 -- test for sending arbitrary IO action
-mkclosure3 :: Managed (Closure (Int -> Managed String))
+mkclosure3 :: M (Closure (Int -> M String))
 mkclosure3 = do
   h <- lift $ randomIO
   let hidden = SI h
@@ -88,7 +88,7 @@ mkclosure3 = do
 
 
 -- higher order function
-mkclosure4 :: Managed (Closure (Int -> Managed String))
+mkclosure4 :: M (Closure (Int -> M String))
 mkclosure4 = do
   let func x = x + 10
   let -- hidden = SI h
@@ -100,7 +100,7 @@ mkclosure4 = do
   pure c
 
 -- test for sending arbitrary IO action
-mkclosure5 :: Managed (Closure (Int -> Managed String))
+mkclosure5 :: M (Closure (Int -> M String))
 mkclosure5 = do
   h <- lift $ randomRIO (0,10)
   logText $ "h = " <> T.pack (show h)

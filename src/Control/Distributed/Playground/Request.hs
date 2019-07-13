@@ -23,7 +23,7 @@ import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticPtr,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import System.IO.Unsafe (unsafePerformIO)
 --
-import Control.Distributed.Playground.Comm ( Managed
+import Control.Distributed.Playground.Comm ( M
                                            , NodeName
                                            , SPort(..)
                                            , RPort(..)
@@ -35,7 +35,7 @@ import Control.Distributed.Playground.Comm ( Managed
 
 -- | Request type
 data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
-                 | MRequest (Closure (a -> Managed b)) (SPort (SPort (Maybe a))) (SPort b)
+                 | MRequest (Closure (a -> M b)) (SPort (SPort (Maybe a))) (SPort b)
                  deriving (Generic, Typeable)
 
 instance (Serializable a, Serializable b) => Binary (Request a b)
@@ -70,7 +70,7 @@ handleRequest ::
      (Serializable b)
   => Request a b
   -> a
-  -> Managed b
+  -> M b
 handleRequest (PureRequest cl _ _) input =
   let fun = unclosure cl
   in pure $ fun input
@@ -85,7 +85,7 @@ processRequest ::
   -> RPort (SPort (Maybe a))
   -> RPort b
   -> [a]
-  -> Managed [b]
+  -> M [b]
 processRequest sp_req sreq rp_sp rp_ans inputs = do
   sendChan sp_req sreq
   logText $ "receiving sp_input"
@@ -101,7 +101,7 @@ processRequest sp_req sreq rp_sp rp_ans inputs = do
 
 callRequest ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
-  => SPort SomeRequest -> Closure (a -> b) -> [a] -> Managed [b]
+  => SPort SomeRequest -> Closure (a -> b) -> [a] -> M [b]
 callRequest sp_req clsr inputs = do
   (sp_ans,rp_ans) <- newChan @b
   (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
@@ -110,7 +110,7 @@ callRequest sp_req clsr inputs = do
 
 callRequestM ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
-  => SPort SomeRequest -> Closure (a -> Managed b) -> [a] -> Managed [b]
+  => SPort SomeRequest -> Closure (a -> M b) -> [a] -> M [b]
 callRequestM sp_req clsr inputs = do
   (sp_ans,rp_ans) <- newChan @b
   (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
@@ -120,14 +120,14 @@ callRequestM sp_req clsr inputs = do
 
 requestTo ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
-  => NodeName -> Closure (a -> b) -> [a] -> Managed [b]
+  => NodeName -> Closure (a -> b) -> [a] -> M [b]
 requestTo node clsr inputs =
   let sp_req = SPort node 0 -- 0 is a special channel id.
   in callRequest sp_req clsr inputs
 
 requestToM ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
-  => NodeName -> Closure (a -> Managed b) -> [a] -> Managed [b]
+  => NodeName -> Closure (a -> M b) -> [a] -> M [b]
 requestToM node clsr inputs =
   let sp_req = SPort node 0 -- 0 is a special channel id.
   in callRequestM sp_req clsr inputs

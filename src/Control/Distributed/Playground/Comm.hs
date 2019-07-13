@@ -132,9 +132,9 @@ initChanState :: NodeName -> SocketPool -> IO ChanState
 initChanState name pool =
   ChanState name pool <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
 
-type Managed = ReaderT ChanState IO
+type M = ReaderT ChanState IO
 
-router :: Managed ()
+router :: M ()
 router = void $ do
   ChanState _ pool queue mref _ <- ask
   -- routing message to channel
@@ -151,7 +151,7 @@ router = void $ do
       whileJust_ (recvIMsg sock) $ \imsg ->
         atomically $ writeTQueue queue imsg
 
-logger :: Managed ()
+logger :: M ()
 logger = void $ do
   lq <- chLogQueue <$> ask
   lift $ forkIO $ do
@@ -159,7 +159,7 @@ logger = void $ do
       txt <- atomically $ readTQueue lq
       TIO.putStrLn txt
 
-runManaged :: NodeName -> SocketPool -> Managed a -> IO a
+runManaged :: NodeName -> SocketPool -> M a -> IO a
 runManaged name pool action = do
   chst <- initChanState name pool
   flip runReaderT chst $ do
@@ -171,7 +171,7 @@ runManaged name pool action = do
 -- Logging --
 -------------
 
-logText :: Text -> Managed ()
+logText :: Text -> M ()
 logText txt = do
   lq <- chLogQueue <$> ask
   lift $ atomically $ writeTQueue lq txt
@@ -193,7 +193,7 @@ data RPort a = RPort {
   , rpChannel :: TChan Msg
   }
 
-newChan :: Managed (SPort a, RPort a)
+newChan :: M (SPort a, RPort a)
 newChan = do
   ChanState self _ _ mref _ <- ask
   lift $
@@ -207,7 +207,7 @@ newChan = do
       pure (SPort self newid, RPort newid ch)
 
 
-sendChan :: (Binary a) => SPort a -> a -> Managed ()
+sendChan :: (Binary a) => SPort a -> a -> M ()
 sendChan (SPort n i) x = do
   SocketPool sockMap <- chSockets <$> ask
   case HM.lookup n sockMap of
@@ -215,6 +215,6 @@ sendChan (SPort n i) x = do
     Just (sock,_) ->
       lift $ sendIMsg sock (IMsg i (toMsg x))
 
-receiveChan :: (Binary a) => RPort a -> Managed a
+receiveChan :: (Binary a) => RPort a -> M a
 receiveChan (RPort _ chan) =
   fromMsg <$> lift (atomically (readTChan chan))

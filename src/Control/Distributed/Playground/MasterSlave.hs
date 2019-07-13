@@ -18,7 +18,7 @@ import Network.Simple.TCP ( HostPreference(Host)
                           , serve
                           )
 --
-import Control.Distributed.Playground.Comm ( Managed
+import Control.Distributed.Playground.Comm ( M
                                            , NodeName(..)
                                            , SocketPool(..)
                                            , receiveChan
@@ -55,7 +55,7 @@ slave node hostName serviceName = do
           sendChan sp_ans ans
           logText $ "answer sent"
 
-master :: [(NodeName,(HostName,ServiceName))] -> Managed a -> IO a
+master :: [(NodeName,(HostName,ServiceName))] -> M a -> IO a
 master slaveList task = do
   pool <-
     SocketPool . HM.fromList <$>
