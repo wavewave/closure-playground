@@ -121,28 +121,26 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
 process :: IO ()
 process = do
   master nodeList$ do
-    a1 <-async $
-             replicateM 3 $ do
-               liftIO (threadDelay 1000000)
-               mkclosure1 >>= \clsr -> requestTo (NodeName "slave1") clsr [1,2,3]
-    a2 <-async $
-             replicateM 3 $ do
-               liftIO (threadDelay 1000000)
-               mkclosure2 >>= \clsr -> requestTo (NodeName "slave2") clsr [100,200,300::Int]
-    a3 <-async $
-             replicateM 3 $ do
-               liftIO (threadDelay 1000000)
-               mkclosure3 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
-
-    a4 <-async $
-             replicateM 3 $ do
-               liftIO (threadDelay 1000000)
-               mkclosure4 >>= \clsr -> requestToM (NodeName "slave1") clsr [100,200,300::Int]
-    a5 <-async $
-             replicateM 3 $ do
-               liftIO (threadDelay 1000000)
-               mkclosure5 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
-
+    a1 <- async $
+            replicateM 3 $ do
+              liftIO (threadDelay 1000000)
+              mkclosure1 >>= \clsr -> requestTo (NodeName "slave1") clsr [1,2,3]
+    a2 <- async $
+            replicateM 3 $ do
+              liftIO (threadDelay 1000000)
+              mkclosure2 >>= \clsr -> requestTo (NodeName "slave2") clsr [100,200,300::Int]
+    a3 <- async $
+            replicateM 3 $ do
+              liftIO (threadDelay 1000000)
+              mkclosure3 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
+    a4 <- async $
+            replicateM 3 $ do
+              liftIO (threadDelay 1000000)
+              mkclosure4 >>= \clsr -> requestToM (NodeName "slave1") clsr [100,200,300::Int]
+    a5 <- async $
+            replicateM 3 $ do
+              liftIO (threadDelay 1000000)
+              mkclosure5 >>= \clsr -> requestToM (NodeName "slave2") clsr [100,200,300::Int]
 
     rs1 <- wait a1
     rs2 <- wait a2
