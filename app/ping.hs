@@ -119,8 +119,8 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "3929"))
            ]
 
 process :: IO ()
-process = do
-  master nodeList$ do
+process =
+  master nodeList $ do
     a1 <- async $
             replicateM 3 $ do
               liftIO (threadDelay 1000000)
