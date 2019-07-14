@@ -114,7 +114,7 @@ sendIMsg sock (IMsg i (Msg sz pl)) = do
 -------------
 
 newtype NodeName = NodeName { unNodeName :: Text }
-                 deriving (Show, Eq, Hashable, Binary, Typeable)
+                 deriving (Show, Eq, Ord, Hashable, Binary, Typeable)
 
 newtype SocketPool = SocketPool {
     sockPoolMap :: HashMap NodeName (Socket,SockAddr)
