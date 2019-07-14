@@ -4,9 +4,7 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
--- import Control.Concurrent.STM (readTVarIO)
 import Control.Monad.IO.Class (liftIO)
--- import Control.Monad.Trans.Reader (ask)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import qualified Data.Text as T
