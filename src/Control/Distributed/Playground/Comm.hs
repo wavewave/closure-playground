@@ -172,6 +172,9 @@ runManaged name pool action = do
     logger
     action
 
+getSelfName :: M NodeName
+getSelfName = chName <$> ask
+
 getPool :: M SocketPool
 getPool = liftIO . readTVarIO =<< chSockets <$> ask
 
