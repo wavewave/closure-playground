@@ -4,16 +4,16 @@
 module Main where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (readTVarIO)
+-- import Control.Concurrent.STM (readTVarIO)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Reader (ask)
+-- import Control.Monad.Trans.Reader (ask)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import qualified Data.Text as T
 import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
 --
-import Control.Distributed.Playground.Comm ( ChanState(..), NodeName(..), SocketPool(..) )
+import Control.Distributed.Playground.Comm ( NodeName(..), SocketPool(..), getPool )
 import Control.Distributed.Playground.MasterSlave (master,slave)
 
 
@@ -51,7 +51,7 @@ process :: IO ()
 process =
   master nodeList $ do
     liftIO $ threadDelay 5000000
-    SocketPool sockMap <- liftIO . readTVarIO =<< chSockets <$> ask
+    SocketPool sockMap <- getPool -- liftIO . readTVarIO =<< chSockets <$> ask
     liftIO $ print $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap
     pure ()
 

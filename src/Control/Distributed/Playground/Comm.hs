@@ -172,6 +172,9 @@ runManaged name pool action = do
     logger
     action
 
+getPool :: M SocketPool
+getPool = liftIO . readTVarIO =<< chSockets <$> ask
+
 -------------
 -- Logging --
 -------------
@@ -228,7 +231,7 @@ newChanWithId newid = do
 
 sendChan :: (Binary a) => SPort a -> a -> M ()
 sendChan (SPort n i) x = do
-  SocketPool sockMap <- liftIO . readTVarIO =<< chSockets <$> ask
+  SocketPool sockMap <- getPool
   case HM.lookup n sockMap of
     Nothing -> logText "connection doesn't exist"
     Just (sock,_) ->
