@@ -25,7 +25,7 @@ import UnliftIO.Async (async,wait)
 --
 import Control.Distributed.Playground.Comm ( M, NodeName(..), SocketPool(..), getPool, logText )
 import Control.Distributed.Playground.MasterSlave (master,slave)
-import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, createRecvP2P, newP2P)
+import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, createP2P, newP2P)
 import Control.Distributed.Playground.Request ( Request
                                               , SomeRequest(..)
                                               , StaticSomeRequest(..)
@@ -99,7 +99,7 @@ testAction3 :: RecvP2PProto Int -> M ()
 testAction3 rpp = do
   logText $ "testAction3 called"
   logText $ T.pack (show rpp)
-  rp <- createRecvP2P rpp
+  rp <- createP2P rpp
   logText $ "receive p2p port is created"
 
 -- NOTE: `() -> M ()` cause the following error:

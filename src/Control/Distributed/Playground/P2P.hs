@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Control.Distributed.Playground.P2P where
@@ -9,11 +10,14 @@ import Data.Word (Word32)
 import GHC.Generics (Generic)
 --
 import Control.Distributed.Playground.Comm ( M
-                                           , SPort
+                                           , SPort(..)
                                            , RPort
-                                           , NodeName
+                                           , NodeName(..)
                                            , newChan
+                                           , sendChan
                                            )
+import Control.Distributed.Playground.Request (peerReqChanId)
+
 
 
 data P2PChanInfo = P2PChanInfo {
@@ -36,29 +40,35 @@ data RecvP2PProto a = RecvP2PProto {
 
 instance Binary (RecvP2PProto a)
 
-
-
-
 newP2P :: M (SendP2PProto a, RecvP2PProto a)
 newP2P = pure (SendP2PProto 1234, RecvP2PProto 1234)
 
 data SendP2P a = SendP2P {
     sp2pChanId :: Word32
   , sp2pPort :: SPort a
-  }
+  } deriving (Generic)
+
+instance Binary (SendP2P a)
 
 data RecvP2P a = RecvP2P {
     rp2pChanId :: Word32
   , rp2pPort :: RPort a
   }
 
+data P2PBrokerRequest = AddP2PChannel (SendP2P Int)
+                      deriving (Generic)
+
+instance Binary P2PBrokerRequest
 
 
-createSendP2P :: SendP2PProto a -> M (SendP2P a)
-createSendP2P = undefined
 
-createRecvP2P :: RecvP2PProto a -> M (RecvP2P a)
-createRecvP2P rpp = do
-  (_sp,rp) <- newChan
+getSendP2P :: SendP2PProto Int -> M (SendP2P Int)
+getSendP2P = undefined
+
+createP2P :: RecvP2PProto Int -> M (RecvP2P Int)
+createP2P rpp = do
+  (sp,rp) <- newChan
+  let sp2p = SendP2P (rprotoChanId rpp) sp
+  sendChan (SPort (NodeName "master") peerReqChanId) (AddP2PChannel sp2p)
   pure $! RecvP2P (rprotoChanId rpp) rp
   -- undefined

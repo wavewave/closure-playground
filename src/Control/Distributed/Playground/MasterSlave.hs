@@ -5,6 +5,7 @@
 {-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeApplications   #-}
 
+{-# OPTIONS_GHC -w #-}
 module Control.Distributed.Playground.MasterSlave where
 
 import Control.Concurrent (threadDelay)
@@ -49,13 +50,17 @@ import Control.Distributed.Playground.Comm    ( M
                                               , logText
                                               , getSelfName
                                               )
-import Control.Distributed.Playground.P2P     ( SendP2PProto, P2PChanInfo )
+import Control.Distributed.Playground.P2P     ( SendP2PProto
+                                              , SendP2P(..)
+                                              , P2PChanInfo
+                                              , P2PBrokerRequest(..)
+                                              )
 import Control.Distributed.Playground.Request ( Request(..)
                                               , SomeRequest(..)
                                               , handleRequest
                                               , reqChanId
                                               , peerChanId
-                                              , peerInfoChanId
+                                              , peerReqChanId
                                               )
 
 
@@ -144,12 +149,21 @@ connectPeers slaveList = do
     let sp = SPort p1 peerChanId
     sendChan sp cmd
 
-p2pBroker :: RPort (SendP2PProto Int,SPort P2PChanInfo) -> M ()
-p2pBroker _ = do
-  _ref_chan <- liftIO $ newTVarIO HM.empty
+
+p2pBroker :: RPort P2PBrokerRequest -> M ()
+p2pBroker rp = do
+  ref_chan <- liftIO $ newTVarIO HM.empty
   forever $ do
-    liftIO $ threadDelay 1200000
-    logText "abcdef"
+    req <- receiveChan rp
+    case req of
+      AddP2PChannel sp2p -> do
+        let i = sp2pChanId sp2p
+        liftIO $ atomically $ modifyTVar' ref_chan (HM.insert i sp2p)
+        m <- liftIO $ readTVarIO ref_chan
+        logText "AddP2PChannel"
+        logText (T.pack (show (HM.keys m)))
+    -- liftIO $ threadDelay 1200000
+
 
 -- | Master node event loop.
 master :: [(NodeName,(HostName,ServiceName))] -> M a -> IO a
@@ -159,7 +173,7 @@ master slaveList task = do
       traverse (\(n,(h,s)) -> fmap (n,) (establishConnection (NodeName "master") (h,s))) slaveList
   ref_pool <- newTVarIO pool
   r <- runManaged (NodeName "master") ref_pool $ do
-         Just (_,rp_pinfo) <- newChanWithId peerInfoChanId
+         Just (_,rp_pinfo) <- newChanWithId peerReqChanId
          connectPeers slaveList
          void $ forkIO $ p2pBroker rp_pinfo
          task
