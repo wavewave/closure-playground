@@ -25,11 +25,12 @@ import UnliftIO.Async (async,wait)
 --
 import Control.Distributed.Playground.Comm ( M, NodeName(..), SocketPool(..), getPool, logText )
 import Control.Distributed.Playground.MasterSlave (master,slave)
-import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, newP2P)
+import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, createRecvP2P, newP2P)
 import Control.Distributed.Playground.Request ( Request
                                               , SomeRequest(..)
                                               , StaticSomeRequest(..)
-                                              , requestToM )
+                                              , requestToM
+                                              )
 
 instance StaticSomeRequest (Request () Int) where
   staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request () Int)))
@@ -95,32 +96,27 @@ testAction2 s = do
   logText $ T.pack (show s)
 
 testAction3 :: RecvP2PProto Int -> M ()
-testAction3 r = do
+testAction3 rpp = do
   logText $ "testAction3 called"
-  logText $ T.pack (show r)
-
-
+  logText $ T.pack (show rpp)
+  rp <- createRecvP2P rpp
+  logText $ "receive p2p port is created"
 
 -- NOTE: `() -> M ()` cause the following error:
--- Network.Socket.recvBuf: invalid argument (non-positive length)
+-- "Network.Socket.recvBuf: invalid argument (non-positive length)"
 -- TODO: investigate this.
-mkclosure1 :: M (Closure (() -> M Int))
-mkclosure1 = do
-  let c = static (\() -> testAction >> pure 0)
-  pure c
+closure1 :: Closure (() -> M Int)
+closure1 = static (\() -> testAction >> pure 0)
 
-mkclosure2 :: SendP2PProto Int -> M (Closure (() -> M Int))
-mkclosure2 sp2p = do
-  let c = static (\(SProtoInt sp) () -> testAction2 sp >> pure 0)
-          `staticMap` cpure closureDict (SProtoInt sp2p)
-  pure c
+closure2 :: SendP2PProto Int -> Closure (() -> M Int)
+closure2 sp2p =
+  static (\(SProtoInt sp) () -> testAction2 sp >> pure 0)
+  `staticMap` cpure closureDict (SProtoInt sp2p)
 
-mkclosure3 :: RecvP2PProto Int -> M (Closure (() -> M Int))
-mkclosure3 rp2p = do
-  let c = static (\(RProtoInt rp) () -> testAction3 rp >> pure 0)
-          `staticMap` cpure closureDict (RProtoInt rp2p)
-  pure c
-
+closure3 :: RecvP2PProto Int -> Closure (() -> M Int)
+closure3 rp2p = do
+  static (\(RProtoInt rp) () -> testAction3 rp >> pure 0)
+  `staticMap` cpure closureDict (RProtoInt rp2p)
 
 -- | main process
 process :: IO ()
@@ -131,31 +127,24 @@ process =
     logText (T.pack (show $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap))
 
     (sp2p,rp2p) <- newP2P
-
-    a1 <-
-      async $
-        mkclosure1 >>= \clsr -> requestToM (NodeName "slave1") clsr [()]
-    a3 <-
-      async $
-        mkclosure1 >>= \clsr -> requestToM (NodeName "slave3") clsr [()]
+    {-
+    a1 <- async $ requestToM (NodeName "slave1") closure1 [()]
+    a3 <- async $ requestToM (NodeName "slave3") closure1 [()]
 
     r1 <- wait a1
     r3 <- wait a3
-
-    a1' <-
-      async $
-        mkclosure2 sp2p >>= \clsr -> requestToM (NodeName "slave1") clsr [()]
-    a3' <-
-      async $
-        mkclosure3 rp2p >>= \clsr -> requestToM (NodeName "slave3") clsr [()]
+    -}
+    a1' <-async $ requestToM (NodeName "slave1") (closure2 sp2p) [()]
+    a3' <-async $ requestToM (NodeName "slave3") (closure3 rp2p) [()]
 
     r1' <- wait a1'
     r3' <- wait a3'
 
-
+    liftIO $ threadDelay 5000000
     logText "finished"
     pure ()
 
+-- | main
 main :: IO ()
 main = do
   a0:_ <- getArgs

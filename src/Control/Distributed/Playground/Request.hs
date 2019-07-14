@@ -43,6 +43,10 @@ reqChanId = 0
 peerChanId :: Word32
 peerChanId = 1
 
+-- | Peer info channel fixed id = 2
+peerInfoChanId :: Word32
+peerInfoChanId = 2
+
 -- | Request type
 data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
                  | MRequest (Closure (a -> M b)) (SPort (SPort (Maybe a))) (SPort b)

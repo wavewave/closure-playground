@@ -8,14 +8,19 @@ import Data.Typeable (Typeable)
 import Data.Word (Word32)
 import GHC.Generics (Generic)
 --
-import Control.Distributed.Playground.Comm (M,SPort,RPort,NodeName)
+import Control.Distributed.Playground.Comm ( M
+                                           , SPort
+                                           , RPort
+                                           , NodeName
+                                           , newChan
+                                           )
+
 
 data P2PChanInfo = P2PChanInfo {
     p2pChanId :: Word32
   , p2pSender :: NodeName
   , p2pReceiver :: NodeName
   }
-
 
 data SendP2PProto a = SendP2PProto {
     sprotoChanId :: Word32
@@ -53,4 +58,7 @@ createSendP2P :: SendP2PProto a -> M (SendP2P a)
 createSendP2P = undefined
 
 createRecvP2P :: RecvP2PProto a -> M (RecvP2P a)
-createRecvP2P = undefined
+createRecvP2P rpp = do
+  (_sp,rp) <- newChan
+  pure $! RecvP2P (rprotoChanId rpp) rp
+  -- undefined

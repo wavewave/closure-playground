@@ -7,6 +7,7 @@
 
 module Control.Distributed.Playground.MasterSlave where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVarIO)
 import Control.Monad (forever,guard,void)
 import Control.Monad.IO.Class (MonadIO(liftIO))
@@ -34,6 +35,7 @@ import Control.Distributed.Playground.Comm    ( M
                                               , NodeName(..)
                                               , SocketPool(..)
                                               , SPort(..)
+                                              , RPort(..)
                                               , ChanState(..)
                                               , fromMsg
                                               , toMsg
@@ -47,11 +49,13 @@ import Control.Distributed.Playground.Comm    ( M
                                               , logText
                                               , getSelfName
                                               )
+import Control.Distributed.Playground.P2P     ( SendP2PProto, P2PChanInfo )
 import Control.Distributed.Playground.Request ( Request(..)
                                               , SomeRequest(..)
                                               , handleRequest
                                               , reqChanId
                                               , peerChanId
+                                              , peerInfoChanId
                                               )
 
 
@@ -140,6 +144,13 @@ connectPeers slaveList = do
     let sp = SPort p1 peerChanId
     sendChan sp cmd
 
+p2pBroker :: RPort (SendP2PProto Int,SPort P2PChanInfo) -> M ()
+p2pBroker _ = do
+  _ref_chan <- liftIO $ newTVarIO HM.empty
+  forever $ do
+    liftIO $ threadDelay 1200000
+    logText "abcdef"
+
 -- | Master node event loop.
 master :: [(NodeName,(HostName,ServiceName))] -> M a -> IO a
 master slaveList task = do
@@ -147,8 +158,11 @@ master slaveList task = do
     SocketPool . HM.fromList <$>
       traverse (\(n,(h,s)) -> fmap (n,) (establishConnection (NodeName "master") (h,s))) slaveList
   ref_pool <- newTVarIO pool
-  r <- runManaged (NodeName "master") ref_pool $
-         connectPeers slaveList >> task
+  r <- runManaged (NodeName "master") ref_pool $ do
+         Just (_,rp_pinfo) <- newChanWithId peerInfoChanId
+         connectPeers slaveList
+         void $ forkIO $ p2pBroker rp_pinfo
+         task
 
   traverse_ (closeSock . fst) . sockPoolMap =<< readTVarIO ref_pool
   pure r
