@@ -63,8 +63,8 @@ data Msg = Msg { msgSize    :: !Word32
 
 
 toMsg :: (Binary a) => a -> Msg
-toMsg x = let bs = BL.toStrict (encode x)
-              sz = fromIntegral (B.length bs)
+toMsg x = let !bs = BL.toStrict (encode x)
+              !sz = fromIntegral (B.length bs)
           in Msg sz bs
 
 fromMsg :: (Binary a) => Msg -> a
@@ -73,14 +73,14 @@ fromMsg (Msg _ bs) = decode (BL.fromStrict bs)
 recvMsg :: Socket -> IO (Maybe Msg)
 recvMsg sock =
   runMaybeT $ do
-    bs <- MaybeT $ recv sock 4
+    !bs <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs)
-    bs' <- MaybeT $ recv sock (fromIntegral sz)
+    !bs' <- MaybeT $ recv sock (fromIntegral sz)
     pure $! Msg sz bs'
 
 sendMsg :: Socket -> Msg -> IO ()
 sendMsg sock (Msg sz pl) = do
-  let lbs = runPut (putWord32le sz)
+  let !lbs = runPut (putWord32le sz)
   send sock (BL.toStrict lbs)
   send sock pl
 
@@ -93,19 +93,19 @@ data IMsg = IMsg { imsgReceiver :: !Word32
 recvIMsg :: Socket -> IO (Maybe IMsg)
 recvIMsg sock = do
   runMaybeT $ do
-    bs1 <- MaybeT $ recv sock 4
+    !bs1 <- MaybeT $ recv sock 4
     let i = runGet getWord32le (BL.fromStrict bs1)
-    bs2 <- MaybeT $ recv sock 4
+    !bs2 <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs2)
-    payload <- MaybeT $ recv sock (fromIntegral sz)
+    !payload <- MaybeT $ recv sock (fromIntegral sz)
     pure $! IMsg i (Msg sz payload)
 
 
 sendIMsg :: Socket -> IMsg -> IO ()
 sendIMsg sock (IMsg i (Msg sz pl)) = do
-  let lb_i  = runPut (putWord32le i)
+  let !lb_i  = runPut (putWord32le i)
   send sock (BL.toStrict lb_i)
-  let lb_sz = runPut (putWord32le sz)
+  let !lb_sz = runPut (putWord32le sz)
   send sock (BL.toStrict lb_sz)
   send sock pl
 
@@ -122,11 +122,11 @@ newtype SocketPool = SocketPool {
 
 
 data ChanState = ChanState {
-    chName :: NodeName
-  , chSockets :: TVar SocketPool
-  , chQueue :: TQueue IMsg
-  , chChanMap :: TVar (Map Word32 (TChan Msg))
-  , chLogQueue :: TQueue Text
+    chName :: !NodeName
+  , chSockets :: !(TVar SocketPool)
+  , chQueue :: !(TQueue IMsg)
+  , chChanMap :: !(TVar (Map Word32 (TChan Msg)))
+  , chLogQueue :: !(TQueue Text)
   }
 
 initChanState :: NodeName -> SocketPool -> IO ChanState

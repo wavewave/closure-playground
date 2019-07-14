@@ -1,7 +1,8 @@
-{-# LANGUAGE ExplicitNamespaces        #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE TupleSections      #-}
+
 module Control.Distributed.Playground.MasterSlave where
 
 import Control.Monad (forever)
