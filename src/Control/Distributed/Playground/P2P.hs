@@ -1,6 +1,12 @@
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Control.Distributed.Playground.P2P where
 
+import Data.Binary (Binary)
+import Data.Typeable (Typeable)
 import Data.Word (Word32)
+import GHC.Generics (Generic)
 --
 import Control.Distributed.Playground.Comm (M,SPort,RPort,NodeName)
 
@@ -14,10 +20,22 @@ data P2PChanInfo = P2PChanInfo {
 data SendP2PProto a = SendP2PProto {
     sprotoChanId :: Word32
   }
+  deriving (Generic,Typeable,Show)
+
+instance Binary (SendP2PProto a)
 
 data RecvP2PProto a = RecvP2PProto {
     rprotoChanId :: Word32
   }
+  deriving (Generic,Typeable,Show)
+
+instance Binary (RecvP2PProto a)
+
+
+
+
+newP2P :: M (SendP2PProto a, RecvP2PProto a)
+newP2P = pure (SendP2PProto 1234, RecvP2PProto 1234)
 
 data SendP2P a = SendP2P {
     sp2pChanId :: Word32

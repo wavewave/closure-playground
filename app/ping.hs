@@ -60,7 +60,7 @@ mkclosure1 = do
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> a + b)
-        `staticMap` cpure closureDict hidden
+          `staticMap` cpure closureDict hidden
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 
@@ -69,7 +69,7 @@ mkclosure2 = do
   h <- lift $ randomIO
   let hidden = SI h
       c = static (\(SI a) b -> show a ++ ":" ++ show b)
-        `staticMap` cpure closureDict hidden
+          `staticMap` cpure closureDict hidden
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 
@@ -82,7 +82,7 @@ mkclosure3 = do
                                   logText ("nuclear missile launched with " <> T.pack (show x))
                                   pure x
                  )
-        `staticMap` cpure closureDict hidden
+          `staticMap` cpure closureDict hidden
   logText $ "sending req with hidden: " <> T.pack (show h)
   pure c
 

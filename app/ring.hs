@@ -1,24 +1,31 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE StaticPointers     #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_GHC -fno-warn-orphans -w #-}
 
 module Main where
 
 import Control.Concurrent (threadDelay)
-import Control.Distributed.Closure (Closure)
+import Control.Distributed.Closure (Closure,cpure,closureDict)
+import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad.IO.Class (liftIO)
-import Data.Binary (Get, get )
+import Data.Binary (Binary, Get, get )
+import Data.Functor.Static (staticMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import qualified Data.Text as T
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
 import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
 import UnliftIO.Async (async,wait)
 --
 import Control.Distributed.Playground.Comm ( M, NodeName(..), SocketPool(..), getPool, logText )
 import Control.Distributed.Playground.MasterSlave (master,slave)
+import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, newP2P)
 import Control.Distributed.Playground.Request ( Request
                                               , SomeRequest(..)
                                               , StaticSomeRequest(..)
@@ -26,6 +33,25 @@ import Control.Distributed.Playground.Request ( Request
 
 instance StaticSomeRequest (Request () Int) where
   staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request () Int)))
+
+
+newtype SProtoInt = SProtoInt (SendP2PProto Int)
+                  deriving (Generic, Typeable)
+
+withStatic [d|
+  instance Binary SProtoInt
+  instance Typeable SProtoInt
+  |]
+
+newtype RProtoInt = RProtoInt (RecvP2PProto Int)
+                  deriving (Generic, Typeable)
+
+withStatic [d|
+  instance Binary RProtoInt
+  instance Typeable RProtoInt
+  |]
+
+
 
 {-
 -- prototype pseudocode
@@ -60,16 +86,41 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "4929"))
 testAction :: M ()
 testAction = do
   logText $ "testAction called"
+  SocketPool sockMap <- getPool
+  logText (T.pack (show $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap))
+
+testAction2 :: SendP2PProto Int -> M ()
+testAction2 s = do
+  logText $ "testAction2 called"
+  logText $ T.pack (show s)
+
+testAction3 :: RecvP2PProto Int -> M ()
+testAction3 r = do
+  logText $ "testAction3 called"
+  logText $ T.pack (show r)
 
 
 
--- NOTE: () -> M () cause the following error:
+-- NOTE: `() -> M ()` cause the following error:
 -- Network.Socket.recvBuf: invalid argument (non-positive length)
 -- TODO: investigate this.
 mkclosure1 :: M (Closure (() -> M Int))
 mkclosure1 = do
   let c = static (\() -> testAction >> pure 0)
   pure c
+
+mkclosure2 :: SendP2PProto Int -> M (Closure (() -> M Int))
+mkclosure2 sp2p = do
+  let c = static (\(SProtoInt sp) () -> testAction2 sp >> pure 0)
+          `staticMap` cpure closureDict (SProtoInt sp2p)
+  pure c
+
+mkclosure3 :: RecvP2PProto Int -> M (Closure (() -> M Int))
+mkclosure3 rp2p = do
+  let c = static (\(RProtoInt rp) () -> testAction3 rp >> pure 0)
+          `staticMap` cpure closureDict (RProtoInt rp2p)
+  pure c
+
 
 -- | main process
 process :: IO ()
@@ -78,11 +129,30 @@ process =
     liftIO $ threadDelay 1000000
     SocketPool sockMap <- getPool
     logText (T.pack (show $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap))
+
+    (sp2p,rp2p) <- newP2P
+
     a1 <-
       async $
         mkclosure1 >>= \clsr -> requestToM (NodeName "slave1") clsr [()]
+    a3 <-
+      async $
+        mkclosure1 >>= \clsr -> requestToM (NodeName "slave3") clsr [()]
+
     r1 <- wait a1
-    -- logText (T.pack (show r1))
+    r3 <- wait a3
+
+    a1' <-
+      async $
+        mkclosure2 sp2p >>= \clsr -> requestToM (NodeName "slave1") clsr [()]
+    a3' <-
+      async $
+        mkclosure3 rp2p >>= \clsr -> requestToM (NodeName "slave3") clsr [()]
+
+    r1' <- wait a1'
+    r3' <- wait a3'
+
+
     logText "finished"
     pure ()
 
