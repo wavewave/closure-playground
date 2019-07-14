@@ -35,6 +35,7 @@ import Control.Distributed.Playground.Comm ( M
                                            , receiveChan
                                            , sendChan
                                            , newChan
+                                           , newChanWithId
                                            , runManaged
                                            , logText
                                             )
@@ -46,7 +47,7 @@ import Control.Distributed.Playground.Request ( Request(..)
 -- | Main request handler in slave
 requestHandler :: M r
 requestHandler = do
-  (_,rp_req) <- newChan -- fixed id = 0
+  Just (_,rp_req) <- newChanWithId 0 -- fixed id = 0
   forever $ do
     SomeRequest req <- receiveChan rp_req
     let (sp_sp,sp_ans) = case req of
@@ -62,7 +63,6 @@ requestHandler = do
       sendChan sp_ans ans
       logText $ "answer sent"
 
-
 slave :: NodeName -> HostName -> ServiceName -> IO ()
 slave node hostName serviceName = do
   putStrLn "Waiting for connection from master."
@@ -75,7 +75,9 @@ slave node hostName serviceName = do
           then do
             let pool = SocketPool $ HM.fromList [(NodeName name,(sock,remoteAddr))]
             TIO.putStrLn $ "Connected client is " <> name <> ". Start process!"
-            runManaged node pool requestHandler
+            runManaged node pool $ do
+              -- forkIO $ peerNetworkHandler
+              requestHandler
           else do
             -- placeholder for peer discovery.
             TIO.putStrLn $ "Connected client is " <> name <> ", but cannot handle it yet"

@@ -211,6 +211,20 @@ newChan = do
       writeTVar mref m'
       pure (SPort self newid, RPort newid ch)
 
+newChanWithId :: Word32 -> M (Maybe  (SPort a, RPort a))
+newChanWithId newid = do
+  ChanState self _ _ mref _ <- ask
+  lift $
+    atomically $ do
+      m <- readTVar mref
+      let ks = M.keys m
+      if newid `elem` ks
+        then pure Nothing
+        else do
+          ch <- newTChan
+          let !m' = M.insert newid ch m
+          writeTVar mref m'
+          pure $ Just (SPort self newid, RPort newid ch)
 
 sendChan :: (Binary a) => SPort a -> a -> M ()
 sendChan (SPort n i) x = do
