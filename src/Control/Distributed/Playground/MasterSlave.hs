@@ -35,6 +35,7 @@ import Control.Distributed.Playground.Request ( Request(..)
 
 slave :: NodeName -> HostName -> ServiceName -> IO ()
 slave node hostName serviceName = do
+  putStrLn "Waiting for connection from master."
   serve (Host hostName) serviceName $ \(sock, remoteAddr) -> do
     putStrLn $ "TCP connection established from " ++ show remoteAddr
     let pool = SocketPool $ HM.fromList [(NodeName "master",(sock,remoteAddr))]

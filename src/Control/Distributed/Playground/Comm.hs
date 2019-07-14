@@ -22,6 +22,7 @@ import Control.Concurrent.STM ( TChan
                               )
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
 import Control.Monad (forever, void)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
@@ -122,7 +123,7 @@ newtype SocketPool = SocketPool {
 
 data ChanState = ChanState {
     chName :: NodeName
-  , chSockets :: SocketPool
+  , chSockets :: TVar SocketPool
   , chQueue :: TQueue IMsg
   , chChanMap :: TVar (Map Word32 (TChan Msg))
   , chLogQueue :: TQueue Text
@@ -130,7 +131,11 @@ data ChanState = ChanState {
 
 initChanState :: NodeName -> SocketPool -> IO ChanState
 initChanState name pool =
-  ChanState name pool <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
+      ChanState name
+  <$> newTVarIO pool
+  <*> newTQueueIO
+  <*> newTVarIO mempty
+  <*> newTQueueIO
 
 type M = ReaderT ChanState IO
 
@@ -145,7 +150,7 @@ router = void $ do
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
   -- receiving gateway
-  let SocketPool sockmap = pool
+  SocketPool sockmap <- liftIO $ readTVarIO pool
   for_ sockmap $ \(sock,_) ->
     lift $ forkIO $
       whileJust_ (recvIMsg sock) $ \imsg ->
@@ -209,7 +214,7 @@ newChan = do
 
 sendChan :: (Binary a) => SPort a -> a -> M ()
 sendChan (SPort n i) x = do
-  SocketPool sockMap <- chSockets <$> ask
+  SocketPool sockMap <- liftIO . readTVarIO =<< chSockets <$> ask
   case HM.lookup n sockMap of
     Nothing -> logText "connection doesn't exist"
     Just (sock,_) ->
