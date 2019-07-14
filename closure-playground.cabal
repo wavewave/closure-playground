@@ -21,8 +21,6 @@ library
   exposed-modules:     Control.Distributed.Playground.Comm
                        Control.Distributed.Playground.MasterSlave
                        Control.Distributed.Playground.Request
-  -- other-modules:
-  -- other-extensions:
   build-depends:       base ^>=4.12.0.0,
                        binary,
                        bytestring,
@@ -34,9 +32,11 @@ library
                        stm,
                        text,
                        transformers,
-                       unordered-containers
+                       unordered-containers,
+                       unliftio
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:         -Wall -Werror
 
 executable ping
   main-is:             ping.hs
@@ -51,10 +51,21 @@ executable ping
                        unliftio,
                        closure-playground
   default-language:    Haskell2010
+  ghc-options:         -Wall -Werror -fno-warn-orphans
 
 executable ring
   main-is:             ring.hs
   hs-source-dirs:      app
   build-depends:       base ^>=4.12.0.0,
+                       binary,
+                       distributed-closure,
+                       network-simple,
+                       random,
+                       stm,
+                       text,
+                       transformers,
+                       unliftio,
+                       unordered-containers,
                        closure-playground
   default-language:    Haskell2010
+  ghc-options:         -Wall -Werror

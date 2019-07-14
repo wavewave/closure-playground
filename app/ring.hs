@@ -1,4 +1,21 @@
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
+
+import Control.Concurrent (threadDelay)
+-- import Control.Concurrent.STM (readTVarIO)
+import Control.Monad.IO.Class (liftIO)
+-- import Control.Monad.Trans.Reader (ask)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.List as L
+import qualified Data.Text as T
+import Network.Simple.TCP (type HostName, type ServiceName)
+import System.Environment (getArgs)
+--
+import Control.Distributed.Playground.Comm ( NodeName(..), SocketPool(..), getPool )
+import Control.Distributed.Playground.MasterSlave (master,slave)
+
 
 {-
 -- prototype pseudocode
@@ -24,6 +41,26 @@ action s r' = do
   send s msg
 -}
 
+nodeList :: [(NodeName,(HostName,ServiceName))]
+nodeList = [ (NodeName "slave1", ("127.0.0.1", "4929"))
+           , (NodeName "slave2", ("127.0.0.1", "4939"))
+           , (NodeName "slave3", ("127.0.0.1", "4949"))
+           ]
+
+process :: IO ()
+process =
+  master nodeList $ do
+    liftIO $ threadDelay 5000000
+    SocketPool sockMap <- getPool -- liftIO . readTVarIO =<< chSockets <$> ask
+    liftIO $ print $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap
+    pure ()
+
 main :: IO ()
 main = do
-  putStrLn "ring"
+  a0:_ <- getArgs
+  case a0 of
+    "master" -> process
+    _ -> let name = NodeName (T.pack a0)
+         in case L.lookup name nodeList of
+              Just (hostName,serviceName) -> slave name hostName serviceName
+              Nothing -> error $ "cannot find " ++ a0

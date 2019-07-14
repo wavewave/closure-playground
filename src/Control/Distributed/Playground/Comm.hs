@@ -22,6 +22,7 @@ import Control.Concurrent.STM ( TChan
                               )
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
 import Control.Monad (forever, void)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
@@ -62,8 +63,8 @@ data Msg = Msg { msgSize    :: !Word32
 
 
 toMsg :: (Binary a) => a -> Msg
-toMsg x = let bs = BL.toStrict (encode x)
-              sz = fromIntegral (B.length bs)
+toMsg x = let !bs = BL.toStrict (encode x)
+              !sz = fromIntegral (B.length bs)
           in Msg sz bs
 
 fromMsg :: (Binary a) => Msg -> a
@@ -72,14 +73,14 @@ fromMsg (Msg _ bs) = decode (BL.fromStrict bs)
 recvMsg :: Socket -> IO (Maybe Msg)
 recvMsg sock =
   runMaybeT $ do
-    bs <- MaybeT $ recv sock 4
+    !bs <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs)
-    bs' <- MaybeT $ recv sock (fromIntegral sz)
+    !bs' <- MaybeT $ recv sock (fromIntegral sz)
     pure $! Msg sz bs'
 
 sendMsg :: Socket -> Msg -> IO ()
 sendMsg sock (Msg sz pl) = do
-  let lbs = runPut (putWord32le sz)
+  let !lbs = runPut (putWord32le sz)
   send sock (BL.toStrict lbs)
   send sock pl
 
@@ -92,19 +93,19 @@ data IMsg = IMsg { imsgReceiver :: !Word32
 recvIMsg :: Socket -> IO (Maybe IMsg)
 recvIMsg sock = do
   runMaybeT $ do
-    bs1 <- MaybeT $ recv sock 4
+    !bs1 <- MaybeT $ recv sock 4
     let i = runGet getWord32le (BL.fromStrict bs1)
-    bs2 <- MaybeT $ recv sock 4
+    !bs2 <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs2)
-    payload <- MaybeT $ recv sock (fromIntegral sz)
+    !payload <- MaybeT $ recv sock (fromIntegral sz)
     pure $! IMsg i (Msg sz payload)
 
 
 sendIMsg :: Socket -> IMsg -> IO ()
 sendIMsg sock (IMsg i (Msg sz pl)) = do
-  let lb_i  = runPut (putWord32le i)
+  let !lb_i  = runPut (putWord32le i)
   send sock (BL.toStrict lb_i)
-  let lb_sz = runPut (putWord32le sz)
+  let !lb_sz = runPut (putWord32le sz)
   send sock (BL.toStrict lb_sz)
   send sock pl
 
@@ -113,7 +114,7 @@ sendIMsg sock (IMsg i (Msg sz pl)) = do
 -------------
 
 newtype NodeName = NodeName { unNodeName :: Text }
-                 deriving (Show, Eq, Hashable, Binary, Typeable)
+                 deriving (Show, Eq, Ord, Hashable, Binary, Typeable)
 
 newtype SocketPool = SocketPool {
     sockPoolMap :: HashMap NodeName (Socket,SockAddr)
@@ -121,16 +122,19 @@ newtype SocketPool = SocketPool {
 
 
 data ChanState = ChanState {
-    chName :: NodeName
-  , chSockets :: SocketPool
-  , chQueue :: TQueue IMsg
-  , chChanMap :: TVar (Map Word32 (TChan Msg))
-  , chLogQueue :: TQueue Text
+    chName :: !NodeName
+  , chSockets :: !(TVar SocketPool)
+  , chQueue :: !(TQueue IMsg)
+  , chChanMap :: !(TVar (Map Word32 (TChan Msg)))
+  , chLogQueue :: !(TQueue Text)
   }
 
-initChanState :: NodeName -> SocketPool -> IO ChanState
-initChanState name pool =
-  ChanState name pool <$> newTQueueIO <*> newTVarIO mempty <*> newTQueueIO
+initChanState :: NodeName -> TVar SocketPool -> IO ChanState
+initChanState name ref_pool =
+      ChanState name ref_pool
+  <$> newTQueueIO
+  <*> newTVarIO mempty
+  <*> newTQueueIO
 
 type M = ReaderT ChanState IO
 
@@ -145,7 +149,7 @@ router = void $ do
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
   -- receiving gateway
-  let SocketPool sockmap = pool
+  SocketPool sockmap <- liftIO $ readTVarIO pool
   for_ sockmap $ \(sock,_) ->
     lift $ forkIO $
       whileJust_ (recvIMsg sock) $ \imsg ->
@@ -159,13 +163,19 @@ logger = void $ do
       txt <- atomically $ readTQueue lq
       TIO.putStrLn txt
 
-runManaged :: NodeName -> SocketPool -> M a -> IO a
-runManaged name pool action = do
-  chst <- initChanState name pool
+runManaged :: NodeName -> TVar SocketPool -> M a -> IO a
+runManaged name ref_pool action = do
+  chst <- initChanState name ref_pool
   flip runReaderT chst $ do
     router
     logger
     action
+
+getSelfName :: M NodeName
+getSelfName = chName <$> ask
+
+getPool :: M SocketPool
+getPool = liftIO . readTVarIO =<< chSockets <$> ask
 
 -------------
 -- Logging --
@@ -206,10 +216,24 @@ newChan = do
       writeTVar mref m'
       pure (SPort self newid, RPort newid ch)
 
+newChanWithId :: Word32 -> M (Maybe  (SPort a, RPort a))
+newChanWithId newid = do
+  ChanState self _ _ mref _ <- ask
+  lift $
+    atomically $ do
+      m <- readTVar mref
+      let ks = M.keys m
+      if newid `elem` ks
+        then pure Nothing
+        else do
+          ch <- newTChan
+          let !m' = M.insert newid ch m
+          writeTVar mref m'
+          pure $ Just (SPort self newid, RPort newid ch)
 
 sendChan :: (Binary a) => SPort a -> a -> M ()
 sendChan (SPort n i) x = do
-  SocketPool sockMap <- chSockets <$> ask
+  SocketPool sockMap <- getPool
   case HM.lookup n sockMap of
     Nothing -> logText "connection doesn't exist"
     Just (sock,_) ->
