@@ -1,9 +1,15 @@
 module Control.Distributed.Playground.P2P where
 
-import Control.Concurrent.STM (TChan)
 import Data.Word (Word32)
 --
-import Control.Distributed.Playground.Comm (M)
+import Control.Distributed.Playground.Comm (M,SPort,RPort,NodeName)
+
+data P2PChanInfo = P2PChanInfo {
+    p2pChanId :: Word32
+  , p2pSender :: NodeName
+  , p2pReceiver :: NodeName
+  }
+
 
 data SendP2PProto a = SendP2PProto {
     sprotoChanId :: Word32
@@ -14,14 +20,16 @@ data RecvP2PProto a = RecvP2PProto {
   }
 
 data SendP2P a = SendP2P {
-    sp2pQueue :: TChan a
-  , sp2pChanId :: Word32
+    sp2pChanId :: Word32
+  , sp2pPort :: SPort a
   }
 
 data RecvP2P a = RecvP2P {
-    rp2pQueue :: TChan a
-  , rp2pChanId :: Word32
+    rp2pChanId :: Word32
+  , rp2pPort :: RPort a
   }
+
+
 
 createSendP2P :: SendP2PProto a -> M (SendP2P a)
 createSendP2P = undefined

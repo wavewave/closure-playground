@@ -1,19 +1,31 @@
 {-# LANGUAGE ExplicitNamespaces #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE StaticPointers     #-}
+{-# OPTIONS_GHC -fno-warn-orphans -w #-}
 
 module Main where
 
 import Control.Concurrent (threadDelay)
+import Control.Distributed.Closure (Closure)
 import Control.Monad.IO.Class (liftIO)
+import Data.Binary (Get, get )
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import qualified Data.Text as T
 import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
+import UnliftIO.Async (async,wait)
 --
-import Control.Distributed.Playground.Comm ( NodeName(..), SocketPool(..), getPool )
+import Control.Distributed.Playground.Comm ( M, NodeName(..), SocketPool(..), getPool, logText )
 import Control.Distributed.Playground.MasterSlave (master,slave)
+import Control.Distributed.Playground.Request ( Request
+                                              , SomeRequest(..)
+                                              , StaticSomeRequest(..)
+                                              , requestToM )
 
+instance StaticSomeRequest (Request () Int) where
+  staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request () Int)))
 
 {-
 -- prototype pseudocode
@@ -45,12 +57,33 @@ nodeList = [ (NodeName "slave1", ("127.0.0.1", "4929"))
            , (NodeName "slave3", ("127.0.0.1", "4949"))
            ]
 
+testAction :: M ()
+testAction = do
+  logText $ "testAction called"
+
+
+
+-- NOTE: () -> M () cause the following error:
+-- Network.Socket.recvBuf: invalid argument (non-positive length)
+-- TODO: investigate this.
+mkclosure1 :: M (Closure (() -> M Int))
+mkclosure1 = do
+  let c = static (\() -> testAction >> pure 0)
+  pure c
+
+-- | main process
 process :: IO ()
 process =
   master nodeList $ do
-    liftIO $ threadDelay 5000000
-    SocketPool sockMap <- getPool -- liftIO . readTVarIO =<< chSockets <$> ask
-    liftIO $ print $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap
+    liftIO $ threadDelay 1000000
+    SocketPool sockMap <- getPool
+    logText (T.pack (show $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap))
+    a1 <-
+      async $
+        mkclosure1 >>= \clsr -> requestToM (NodeName "slave1") clsr [()]
+    r1 <- wait a1
+    -- logText (T.pack (show r1))
+    logText "finished"
     pure ()
 
 main :: IO ()
