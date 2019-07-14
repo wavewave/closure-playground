@@ -19,6 +19,7 @@ import Data.Binary.Put (Put)
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Data.Typeable (Typeable)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 import GHC.StaticPtr (StaticPtr,deRefStaticPtr,staticKey,unsafeLookupStaticPtr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -32,6 +33,15 @@ import Control.Distributed.Playground.Comm ( M
                                            , newChan
                                            , logText
                                            )
+
+
+-- | Request handler channel has fixed id = 0
+reqChanId :: Word32
+reqChanId = 0
+
+-- | Peer handler channel has fixed id = 1
+peerChanId :: Word32
+peerChanId = 1
 
 -- | Request type
 data Request a b = PureRequest (Closure (a -> b)) (SPort (SPort (Maybe a))) (SPort b)
@@ -122,12 +132,12 @@ requestTo ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
   => NodeName -> Closure (a -> b) -> [a] -> M [b]
 requestTo node clsr inputs =
-  let sp_req = SPort node 0 -- 0 is a special channel id.
+  let sp_req = SPort node reqChanId
   in callRequest sp_req clsr inputs
 
 requestToM ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
   => NodeName -> Closure (a -> M b) -> [a] -> M [b]
 requestToM node clsr inputs =
-  let sp_req = SPort node 0 -- 0 is a special channel id.
+  let sp_req = SPort node reqChanId
   in callRequestM sp_req clsr inputs

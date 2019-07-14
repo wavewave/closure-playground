@@ -28,26 +28,27 @@ import Network.Simple.TCP ( HostPreference(Host)
                           )
 import UnliftIO.Concurrent ( forkIO )
 --
-import Control.Distributed.Playground.Comm ( M
-                                           , Msg
-                                           , NodeName(..)
-                                           , SocketPool(..)
-                                           , SPort(..)
-                                           -- , getPool
-                                           , fromMsg
-                                           , toMsg
-                                           , recvMsg
-                                           , sendMsg
-                                           , receiveChan
-                                           , sendChan
-                                           , newChan
-                                           , newChanWithId
-                                           , runManaged
-                                           , logText
-                                            )
+import Control.Distributed.Playground.Comm    ( M
+                                              , Msg
+                                              , NodeName(..)
+                                              , SocketPool(..)
+                                              , SPort(..)
+                                              , fromMsg
+                                              , toMsg
+                                              , recvMsg
+                                              , sendMsg
+                                              , receiveChan
+                                              , sendChan
+                                              , newChan
+                                              , newChanWithId
+                                              , runManaged
+                                              , logText
+                                              )
 import Control.Distributed.Playground.Request ( Request(..)
                                               , SomeRequest(..)
                                               , handleRequest
+                                              , reqChanId
+                                              , peerChanId
                                               )
 
 
@@ -55,10 +56,11 @@ data Peer = Peer NodeName (HostName,ServiceName) deriving (Show,Generic)
 
 instance Binary Peer
 
+
 -- | Main request handler in slave
 requestHandler :: M r
 requestHandler = do
-  Just (_,rp_req) <- newChanWithId 0 -- fixed id = 0
+  Just (_,rp_req) <- newChanWithId reqChanId
   forever $ do
     SomeRequest req <- receiveChan rp_req
     let (sp_sp,sp_ans) = case req of
@@ -77,7 +79,7 @@ requestHandler = do
 -- | Handling peer-to-peer network
 peerNetworkHandler :: M r
 peerNetworkHandler = do
-  Just (_,rp_peer) <- newChanWithId @Peer 1 -- fixed id = 1
+  Just (_,rp_peer) <- newChanWithId @Peer peerChanId
   forever $ do
     t <- receiveChan rp_peer
     logText ("connect to peer: " <> T.pack (show t))
@@ -119,7 +121,7 @@ connectPeers slaveList = do
         guard (p1 < p2)
         pure (p1,Peer p2 addr2)
   for_ peers $ \(p1,cmd) -> do
-    let sp = SPort p1 1
+    let sp = SPort p1 peerChanId
     sendChan sp cmd
 
 master :: [(NodeName,(HostName,ServiceName))] -> M a -> IO a
@@ -127,10 +129,8 @@ master slaveList task = do
   pool <-
     SocketPool . HM.fromList <$>
       traverse (\(n,(h,s)) -> fmap (n,) (establishConnection (h,s))) slaveList
+  r <- runManaged (NodeName "master") pool $
+         connectPeers slaveList >> task
 
-  -- threadDelay 2500000
-  r <- runManaged (NodeName "master") pool $ do
-    connectPeers slaveList
-    task
   traverse_ (closeSock . fst) $ sockPoolMap pool
   pure r
