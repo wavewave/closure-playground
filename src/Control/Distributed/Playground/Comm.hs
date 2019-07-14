@@ -129,11 +129,10 @@ data ChanState = ChanState {
   , chLogQueue :: !(TQueue Text)
   }
 
-initChanState :: NodeName -> SocketPool -> IO ChanState
-initChanState name pool =
-      ChanState name
-  <$> newTVarIO pool
-  <*> newTQueueIO
+initChanState :: NodeName -> TVar SocketPool -> IO ChanState
+initChanState name ref_pool =
+      ChanState name ref_pool
+  <$> newTQueueIO
   <*> newTVarIO mempty
   <*> newTQueueIO
 
@@ -164,9 +163,9 @@ logger = void $ do
       txt <- atomically $ readTQueue lq
       TIO.putStrLn txt
 
-runManaged :: NodeName -> SocketPool -> M a -> IO a
-runManaged name pool action = do
-  chst <- initChanState name pool
+runManaged :: NodeName -> TVar SocketPool -> M a -> IO a
+runManaged name ref_pool action = do
+  chst <- initChanState name ref_pool
   flip runReaderT chst $ do
     router
     logger

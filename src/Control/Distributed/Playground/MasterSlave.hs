@@ -7,9 +7,9 @@
 
 module Control.Distributed.Playground.MasterSlave where
 
-import Control.Concurrent.STM (atomically,modifyTVar')
+import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVarIO)
 import Control.Monad (forever,guard,void)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Reader (ask)
 import Data.Binary (Binary)
@@ -85,6 +85,14 @@ requestHandler = do
       sendChan sp_ans ans
       logText $ "answer sent"
 
+-- | Insert socket into pool
+insertIntoPool :: (MonadIO m) => TVar SocketPool -> NodeName -> (Socket,SockAddr) -> m ()
+insertIntoPool ref_pool name (sock,addr) =
+  liftIO $
+    atomically $
+      modifyTVar' ref_pool $ \(SocketPool pool) ->
+        SocketPool (HM.insert name (sock,addr) pool)
+
 -- | Handling peer-to-peer network
 peerNetworkHandler :: M r
 peerNetworkHandler = do
@@ -95,32 +103,30 @@ peerNetworkHandler = do
     Peer peername (peerhost,peerport)  <- receiveChan rp_peer
     logText $ "connect to peer: " <> unNodeName peername
     (sock,addr) <- liftIO $ establishConnection myname (peerhost,peerport)
-    liftIO $
-      atomically $
-        modifyTVar' ref_pool $ \(SocketPool pool) ->
-          SocketPool (HM.insert peername (sock,addr) pool)
+    insertIntoPool ref_pool peername (sock,addr)
 
 -- | Slave node main event loop.
 slave :: NodeName -> HostName -> ServiceName -> IO ()
 slave node hostName serviceName = do
   putStrLn "Waiting for connection from master."
-  serve (Host hostName) serviceName $ \(sock, remoteAddr) -> do
-    putStrLn $ "TCP connection established from " ++ show remoteAddr
+  ref_pool <- newTVarIO $ SocketPool HM.empty
+
+  serve (Host hostName) serviceName $ \(sock, addr) -> do
+    putStrLn $ "TCP connection established from " ++ show addr
     mname <- fmap (fromMsg @NodeName) <$> recvMsg sock
     case mname of
-      Just (NodeName name) ->
-        if name == "master"
+      Just name ->
+        if unNodeName name == "master"
           then do
-            let pool = SocketPool $ HM.fromList [(NodeName name,(sock,remoteAddr))]
-            TIO.putStrLn $ "Connected client is " <> name <> ". Start process!"
-            runManaged node pool $ do
+            insertIntoPool ref_pool name (sock,addr)
+            TIO.putStrLn $ "Connected client is " <> unNodeName name <> ". Start process!"
+            runManaged node ref_pool $ do
               void $ forkIO $ peerNetworkHandler
               requestHandler
           else do
-            -- placeholder for peer discovery.
-            TIO.putStrLn $ "Connected client is " <> name <> ", but cannot handle it yet"
+            insertIntoPool ref_pool name (sock,addr)
+            TIO.putStrLn $ "added connected client: " <> unNodeName name
       Nothing -> error "should not happen"
-
 
 -- | Populate connection pool of each slave with their peers.
 connectPeers :: [(NodeName,(HostName,ServiceName))] -> M ()
@@ -140,8 +146,9 @@ master slaveList task = do
   pool <-
     SocketPool . HM.fromList <$>
       traverse (\(n,(h,s)) -> fmap (n,) (establishConnection (NodeName "master") (h,s))) slaveList
-  r <- runManaged (NodeName "master") pool $
+  ref_pool <- newTVarIO pool
+  r <- runManaged (NodeName "master") ref_pool $
          connectPeers slaveList >> task
 
-  traverse_ (closeSock . fst) $ sockPoolMap pool
+  traverse_ (closeSock . fst) . sockPoolMap =<< readTVarIO ref_pool
   pure r
