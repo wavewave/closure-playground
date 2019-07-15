@@ -134,6 +134,9 @@ slave node hostName serviceName = do
               requestHandler
           else do
             insertIntoPool ref_pool name (sock,addr)
+            forever $ do
+              bs <- recvMsg sock
+              print bs
             -- TIO.putStrLn $ "added connected client: " <> unNodeName name
       Nothing -> error "should not happen"
 
@@ -171,6 +174,7 @@ p2pBroker rp = do
               case HM.lookup (sprotoChanId sproto) chan of
                 Nothing -> retry
                 Just sp2p -> pure sp2p
+          logText $ "sp2p id = " <> T.pack (show (sp2pChanId sp2p))
           sendChan sp sp2p
           logText "GetP2PChannel, sent"
     -- liftIO $ threadDelay 1200000

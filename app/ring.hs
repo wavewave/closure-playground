@@ -109,7 +109,9 @@ testAction2 spp = do
   logText $ "testAction2 called"
   logText $ T.pack (show spp)
   sp2p <- getSendP2P spp
+  logText $ "sp2p received"
   sendChan (sp2pPort sp2p) 514
+  logText $ "514 has been sent"
   pure ()
 
 testAction3 :: RecvP2PProto Int -> M ()
@@ -119,6 +121,7 @@ testAction3 rpp = do
   rp2p <- createP2P rpp
   logText $ "receive p2p port is created"
   result <- receiveChan (rp2pPort rp2p)
+  logText $ "received from p2p"
   logText $ T.pack (show result)
 
 -- NOTE: `() -> M ()` cause the following error:

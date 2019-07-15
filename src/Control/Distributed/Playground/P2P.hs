@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Control.Distributed.Playground.P2P where
 
@@ -63,14 +64,12 @@ data P2PBrokerRequest = AddP2PChannel (SendP2P Int)
 instance Binary P2PBrokerRequest
 
 
-
 getSendP2P :: SendP2PProto Int -> M (SendP2P Int)
 getSendP2P spp = do
-  (sp,rp) <- newChan
+  (sp,rp) <- newChan @(SendP2P Int)
   sendChan (SPort (NodeName "master") peerReqChanId) (GetP2PChannel spp sp)
   sp2p <- receiveChan rp
   pure $! sp2p
-
 
 createP2P :: RecvP2PProto Int -> M (RecvP2P Int)
 createP2P rpp = do
@@ -78,4 +77,3 @@ createP2P rpp = do
   let sp2p = SendP2P (rprotoChanId rpp) sp
   sendChan (SPort (NodeName "master") peerReqChanId) (AddP2PChannel sp2p)
   pure $! RecvP2P (rprotoChanId rpp) rp
-  -- undefined
