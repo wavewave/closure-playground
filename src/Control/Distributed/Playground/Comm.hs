@@ -130,6 +130,7 @@ data ChanState = ChanState {
   , chSockets :: !(TVar SocketPool)
   , chQueue :: !(TQueue IMsg)
   , chChanMap :: !(TVar (Map Word32 (TChan Msg)))
+  , chP2PNext :: !(TVar Word32)  -- TODO: change this to map
   , chLogQueue :: !(TQueue Text)
   }
 
@@ -138,13 +139,14 @@ initChanState name ref_pool =
       ChanState name ref_pool
   <$> newTQueueIO
   <*> newTVarIO mempty
+  <*> newTVarIO 0
   <*> newTQueueIO
 
 type M = ReaderT ChanState IO
 
 gateway :: M ()
 gateway = do
-  ChanState _ pool queue _ _ <- ask
+  ChanState _ pool queue _ _ _ <- ask
   -- check
   void $ forkIO $ void $ flip runStateT HM.empty $ do
     forever $ do
@@ -164,7 +166,7 @@ gateway = do
 
 router :: M ()
 router = void $ do
-  ChanState _ _ queue mref _ <- ask
+  ChanState _ _ queue mref _ _ <- ask
   -- routing message to channel
   void $ lift $ forkIO $
     forever $ do
@@ -225,7 +227,7 @@ data RPort a = RPort {
 
 newChan :: M (SPort a, RPort a)
 newChan = do
-  ChanState self _ _ mref _ <- ask
+  ChanState self _ _ mref _ _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref
@@ -238,7 +240,7 @@ newChan = do
 
 newChanWithId :: Word32 -> M (Maybe  (SPort a, RPort a))
 newChanWithId newid = do
-  ChanState self _ _ mref _ <- ask
+  ChanState self _ _ mref _ _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref

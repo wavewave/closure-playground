@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -5,6 +6,9 @@
 
 module Control.Distributed.Playground.P2P where
 
+import Control.Concurrent.STM (atomically,readTVarIO,writeTVar)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Reader (ask)
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.Word (Word32)
@@ -14,6 +18,7 @@ import Control.Distributed.Playground.Comm ( M
                                            , SPort(..)
                                            , RPort
                                            , NodeName(..)
+                                           , ChanState(..)
                                            , newChan
                                            , receiveChan
                                            , sendChan
@@ -42,8 +47,13 @@ data RecvP2PProto a = RecvP2PProto {
 
 instance Binary (RecvP2PProto a)
 
+-- TODO: should be issued automatically
 newP2P :: M (SendP2PProto a, RecvP2PProto a)
-newP2P = pure (SendP2PProto 1234, RecvP2PProto 1234)
+newP2P = do
+  ref <- chP2PNext <$> ask
+  !n <- liftIO $ readTVarIO ref
+  liftIO $ atomically $ writeTVar ref (n+1)
+  pure (SendP2PProto n, RecvP2PProto n)
 
 data SendP2P a = SendP2P {
     sp2pChanId :: Word32
