@@ -15,12 +15,12 @@ import Control.Distributed.Playground.MasterSlave (master,slave)
 import Test (relay) -- (test1)
 
 nodeList :: [(NodeName,(HostName,ServiceName))]
-nodeList = [ (NodeName "slave1", ("127.0.0.1", "4929"))
+nodeList = [ (NodeName "slave0", ("127.0.0.1", "4219"))
+           , (NodeName "slave1", ("127.0.0.1", "4929"))
            , (NodeName "slave2", ("127.0.0.1", "4939"))
            , (NodeName "slave3", ("127.0.0.1", "4949"))
+           , (NodeName "slave4", ("127.0.0.1", "4959"))
            ]
-
-
 
 
 -- | main

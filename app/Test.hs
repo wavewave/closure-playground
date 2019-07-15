@@ -146,12 +146,13 @@ initPass toNextP = do
   logText $ "start a baton with value: " <> T.pack (show baton)
   sendChan (sp2pPort toNext)  baton
 
-finalPass :: RecvP2PProto Int -> M ()
+finalPass :: RecvP2PProto Int -> M Int
 finalPass fromPrevP = do
   logText $ "finalPass called"
   fromPrev <- createP2P fromPrevP
   baton <- receiveChan (rp2pPort fromPrev)
   logText $ "got a baton with value: " <> T.pack (show baton)
+  pure baton
 
 relayer :: RecvP2PProto Int -> SendP2PProto Int -> M ()
 relayer fromPrevP toNextP = do
@@ -171,7 +172,7 @@ clsr_initPass toNextP =
 
 clsr_finalPass :: RecvP2PProto Int -> Closure (() -> M Int)
 clsr_finalPass fromPrevP =
-  static (\(RProtoInt fromPrevP) () -> finalPass fromPrevP >> pure 0)
+  static (\(RProtoInt fromPrevP) () -> finalPass fromPrevP)
   `staticMap` cpure closureDict (RProtoInt fromPrevP)
 
 clsr_relayer :: RecvP2PProto Int -> SendP2PProto Int -> Closure (() -> M Int)
@@ -196,8 +197,8 @@ relay = do
   as <- for (zip pairs nodes) $ \((rpp,spp),node) -> do
           a <- async $ requestToM node (clsr_relayer rpp spp) [()]
           pure a
-  a0 <- async $ requestToM (NodeName "slave1") (clsr_initPass sp0) [()]
-  an <- async $ requestToM (NodeName "slave3") (clsr_finalPass rpn) [()]
+  a0 <- async $ requestToM (NodeName "slave0") (clsr_initPass sp0) [()]
+  an <- async $ requestToM (NodeName "slave4") (clsr_finalPass rpn) [()]
 
   _ <- wait a0
   traverse_ wait as
