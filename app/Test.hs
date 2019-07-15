@@ -129,7 +129,6 @@ test1 = do
   _r1' <- wait a1'
   _r3' <- wait a3'
 
-  -- liftIO $ threadDelay 5000000
   logText "finished"
   pure ()
 
@@ -192,7 +191,7 @@ relay = do
       rps = map snd chs -- receive ports
       sp0 = head sps
       rpn = last rps
-  let pairs = zip rps (tail sps)  -- (s_(i+1), r_i)
+  let pairs = zip rps (tail sps)  -- (r_i,s_(i+1))
       nodes = map NodeName ["slave1","slave2","slave3"]
   as <- for (zip pairs nodes) $ \((rpp,spp),node) -> do
           a <- async $ requestToM node (clsr_relayer rpp spp) [()]
@@ -203,6 +202,4 @@ relay = do
   _ <- wait a0
   traverse_ wait as
   rn <- wait an
-  -- send sp0 "1234"
-  -- r <- recv rpn
   liftIO $ print rn
