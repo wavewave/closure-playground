@@ -54,6 +54,7 @@ executable ping
 executable ring
   main-is:             ring.hs
   hs-source-dirs:      app
+  other-modules:       Test
   build-depends:       base ^>=4.12.0.0,
                        binary,
                        distributed-closure,
