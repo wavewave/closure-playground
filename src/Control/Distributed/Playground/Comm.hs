@@ -8,10 +8,11 @@
 {-# OPTIONS_GHC -Wall -Werror #-}
 module Control.Distributed.Playground.Comm where
 
-import Control.Concurrent (forkIO)
+-- import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
+                              , retry
                               , newTVarIO
                               , readTVar
                               , readTVarIO
@@ -27,6 +28,8 @@ import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.Reader (ReaderT(runReaderT),ask)
+import Control.Monad.Trans.State (runStateT)
+import qualified Control.Monad.Trans.State as S
 import Data.Binary (Binary(get,put), decode, encode)
 import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
@@ -44,6 +47,7 @@ import qualified Data.Text.IO as TIO
 import Data.Word (Word32)
 import GHC.Generics (Generic)
 import Network.Simple.TCP (Socket, SockAddr, recv, send)
+import UnliftIO.Concurrent (forkIO)
 
 data BinProxy a = BinProxy
 
@@ -126,6 +130,7 @@ data ChanState = ChanState {
   , chSockets :: !(TVar SocketPool)
   , chQueue :: !(TQueue IMsg)
   , chChanMap :: !(TVar (Map Word32 (TChan Msg)))
+  , chP2PNext :: !(TVar Word32)  -- TODO: change this to map
   , chLogQueue :: !(TQueue Text)
   }
 
@@ -134,13 +139,34 @@ initChanState name ref_pool =
       ChanState name ref_pool
   <$> newTQueueIO
   <*> newTVarIO mempty
+  <*> newTVarIO 0
   <*> newTQueueIO
 
 type M = ReaderT ChanState IO
 
+gateway :: M ()
+gateway = do
+  ChanState _ pool queue _ _ _ <- ask
+  -- check
+  void $ forkIO $ void $ flip runStateT HM.empty $ do
+    forever $ do
+      conns <- S.get
+      (conns',diff) <-
+        liftIO $ atomically $ do
+          SocketPool conns' <- readTVar pool
+          let diff = conns' `HM.difference` conns
+          if HM.null diff
+            then retry
+            else pure (conns',diff)
+      S.put conns'
+      for_ diff $ \(sock,_) ->
+        liftIO $ forkIO $
+          whileJust_ (recvIMsg sock) $ \imsg ->
+            atomically $ writeTQueue queue imsg
+
 router :: M ()
 router = void $ do
-  ChanState _ pool queue mref _ <- ask
+  ChanState _ _ queue mref _ _ <- ask
   -- routing message to channel
   void $ lift $ forkIO $
     forever $ do
@@ -149,11 +175,7 @@ router = void $ do
       for_ (M.lookup i m) $ \ch -> do
         atomically $ writeTChan ch msg
   -- receiving gateway
-  SocketPool sockmap <- liftIO $ readTVarIO pool
-  for_ sockmap $ \(sock,_) ->
-    lift $ forkIO $
-      whileJust_ (recvIMsg sock) $ \imsg ->
-        atomically $ writeTQueue queue imsg
+  gateway
 
 logger :: M ()
 logger = void $ do
@@ -205,7 +227,7 @@ data RPort a = RPort {
 
 newChan :: M (SPort a, RPort a)
 newChan = do
-  ChanState self _ _ mref _ <- ask
+  ChanState self _ _ mref _ _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref
@@ -218,7 +240,7 @@ newChan = do
 
 newChanWithId :: Word32 -> M (Maybe  (SPort a, RPort a))
 newChanWithId newid = do
-  ChanState self _ _ mref _ <- ask
+  ChanState self _ _ mref _ _ <- ask
   lift $
     atomically $ do
       m <- readTVar mref

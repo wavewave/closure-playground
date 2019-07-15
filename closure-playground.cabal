@@ -6,20 +6,18 @@ cabal-version:       2.4
 name:                closure-playground
 version:             0.1.0.0
 synopsis:            distributed computing using distribued-closure
--- description:
 homepage:            http://github.com/wavewave/closure-playground
--- bug-reports:
 license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Ian-Woo Kim
 maintainer:          ianwookim@gmail.com
--- copyright:
 category:            Concurrency
 extra-source-files:  CHANGELOG.md, README.md
 
 library
   exposed-modules:     Control.Distributed.Playground.Comm
                        Control.Distributed.Playground.MasterSlave
+                       Control.Distributed.Playground.P2P
                        Control.Distributed.Playground.Request
   build-depends:       base ^>=4.12.0.0,
                        binary,
@@ -56,6 +54,7 @@ executable ping
 executable ring
   main-is:             ring.hs
   hs-source-dirs:      app
+  other-modules:       Test
   build-depends:       base ^>=4.12.0.0,
                        binary,
                        distributed-closure,
