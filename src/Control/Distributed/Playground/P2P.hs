@@ -14,6 +14,7 @@ import Control.Distributed.Playground.Comm ( M
                                            , RPort
                                            , NodeName(..)
                                            , newChan
+                                           , receiveChan
                                            , sendChan
                                            )
 import Control.Distributed.Playground.Request (peerReqChanId)
@@ -56,6 +57,7 @@ data RecvP2P a = RecvP2P {
   }
 
 data P2PBrokerRequest = AddP2PChannel (SendP2P Int)
+                      | GetP2PChannel (SendP2PProto Int) (SPort (SendP2P Int))
                       deriving (Generic)
 
 instance Binary P2PBrokerRequest
@@ -63,7 +65,12 @@ instance Binary P2PBrokerRequest
 
 
 getSendP2P :: SendP2PProto Int -> M (SendP2P Int)
-getSendP2P = undefined
+getSendP2P spp = do
+  (sp,rp) <- newChan
+  sendChan (SPort (NodeName "master") peerReqChanId) (GetP2PChannel spp sp)
+  sp2p <- receiveChan rp
+  pure $! sp2p
+
 
 createP2P :: RecvP2PProto Int -> M (RecvP2P Int)
 createP2P rpp = do

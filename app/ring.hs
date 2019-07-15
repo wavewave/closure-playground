@@ -23,9 +23,23 @@ import Network.Simple.TCP (type HostName, type ServiceName)
 import System.Environment (getArgs)
 import UnliftIO.Async (async,wait)
 --
-import Control.Distributed.Playground.Comm ( M, NodeName(..), SocketPool(..), getPool, logText )
+import Control.Distributed.Playground.Comm ( M
+                                           , NodeName(..)
+                                           , SocketPool(..)
+                                           , getPool
+                                           , logText
+                                           , receiveChan
+                                           , sendChan
+                                           )
 import Control.Distributed.Playground.MasterSlave (master,slave)
-import Control.Distributed.Playground.P2P (SendP2PProto, RecvP2PProto, createP2P, newP2P)
+import Control.Distributed.Playground.P2P  (SendP2PProto
+                                          , RecvP2PProto
+                                          , SendP2P(..)
+                                          , RecvP2P(..)
+                                          , createP2P
+                                          , getSendP2P
+                                          , newP2P
+                                          )
 import Control.Distributed.Playground.Request ( Request
                                               , SomeRequest(..)
                                               , StaticSomeRequest(..)
@@ -91,16 +105,21 @@ testAction = do
   logText (T.pack (show $ map (\(k,(_,v)) -> (k,v)) $ HM.toList sockMap))
 
 testAction2 :: SendP2PProto Int -> M ()
-testAction2 s = do
+testAction2 spp = do
   logText $ "testAction2 called"
-  logText $ T.pack (show s)
+  logText $ T.pack (show spp)
+  sp2p <- getSendP2P spp
+  sendChan (sp2pPort sp2p) 514
+  pure ()
 
 testAction3 :: RecvP2PProto Int -> M ()
 testAction3 rpp = do
   logText $ "testAction3 called"
   logText $ T.pack (show rpp)
-  rp <- createP2P rpp
+  rp2p <- createP2P rpp
   logText $ "receive p2p port is created"
+  result <- receiveChan (rp2pPort rp2p)
+  logText $ T.pack (show result)
 
 -- NOTE: `() -> M ()` cause the following error:
 -- "Network.Socket.recvBuf: invalid argument (non-positive length)"

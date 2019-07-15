@@ -9,7 +9,7 @@
 module Control.Distributed.Playground.MasterSlave where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVarIO)
+import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVar,readTVarIO,retry)
 import Control.Monad (forever,guard,void)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Loops (whileJust_)
@@ -50,7 +50,7 @@ import Control.Distributed.Playground.Comm    ( M
                                               , logText
                                               , getSelfName
                                               )
-import Control.Distributed.Playground.P2P     ( SendP2PProto
+import Control.Distributed.Playground.P2P     ( SendP2PProto(..)
                                               , SendP2P(..)
                                               , P2PChanInfo
                                               , P2PBrokerRequest(..)
@@ -85,14 +85,14 @@ requestHandler = do
                            PureRequest _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
                            MRequest    _ sp_sp' sp_ans' -> (sp_sp',sp_ans')
     (sp_input,rp_input) <- newChan
-    logText $ "sp_input sent:"
+    -- logText $ "sp_input sent:"
     sendChan sp_sp sp_input
     whileJust_ (receiveChan rp_input) $ \input -> do
-      logText $ "requested for input: " <> T.pack (show input)
+      -- logText $ "requested for input: " <> T.pack (show input)
       ans <- handleRequest req input
-      logText $ "request handled with answer: " <> T.pack (show ans)
+      -- logText $ "request handled with answer: " <> T.pack (show ans)
       sendChan sp_ans ans
-      logText $ "answer sent"
+      -- logText $ "answer sent"
 
 -- | Insert socket into pool
 insertIntoPool :: (MonadIO m) => TVar SocketPool -> NodeName -> (Socket,SockAddr) -> m ()
@@ -110,31 +110,31 @@ peerNetworkHandler = do
   myname <- getSelfName
   forever $ do
     Peer peername (peerhost,peerport)  <- receiveChan rp_peer
-    logText $ "connect to peer: " <> unNodeName peername
+    -- logText $ "connect to peer: " <> unNodeName peername
     (sock,addr) <- liftIO $ establishConnection myname (peerhost,peerport)
     insertIntoPool ref_pool peername (sock,addr)
 
 -- | Slave node main event loop.
 slave :: NodeName -> HostName -> ServiceName -> IO ()
 slave node hostName serviceName = do
-  putStrLn "Waiting for connection from master."
+  -- putStrLn "Waiting for connection from master."
   ref_pool <- newTVarIO $ SocketPool HM.empty
 
   serve (Host hostName) serviceName $ \(sock, addr) -> do
-    putStrLn $ "TCP connection established from " ++ show addr
+    -- putStrLn $ "TCP connection established from " ++ show addr
     mname <- fmap (fromMsg @NodeName) <$> recvMsg sock
     case mname of
       Just name ->
         if unNodeName name == "master"
           then do
             insertIntoPool ref_pool name (sock,addr)
-            TIO.putStrLn $ "Connected client is " <> unNodeName name <> ". Start process!"
+            -- TIO.putStrLn $ "Connected client is " <> unNodeName name <> ". Start process!"
             runManaged node ref_pool $ do
               void $ forkIO $ peerNetworkHandler
               requestHandler
           else do
             insertIntoPool ref_pool name (sock,addr)
-            TIO.putStrLn $ "added connected client: " <> unNodeName name
+            -- TIO.putStrLn $ "added connected client: " <> unNodeName name
       Nothing -> error "should not happen"
 
 -- | Populate connection pool of each slave with their peers.
@@ -162,6 +162,17 @@ p2pBroker rp = do
         m <- liftIO $ readTVarIO ref_chan
         logText "AddP2PChannel"
         logText (T.pack (show (HM.keys m)))
+      GetP2PChannel sproto sp -> do
+        logText "GetP2PChannel"
+        void $ forkIO $ do
+          sp2p <-
+            liftIO $ atomically $ do
+              chan <- readTVar ref_chan
+              case HM.lookup (sprotoChanId sproto) chan of
+                Nothing -> retry
+                Just sp2p -> pure sp2p
+          sendChan sp sp2p
+          logText "GetP2PChannel, sent"
     -- liftIO $ threadDelay 1200000
 
 
