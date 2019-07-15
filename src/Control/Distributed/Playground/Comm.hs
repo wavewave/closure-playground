@@ -149,7 +149,6 @@ gateway = do
   void $ forkIO $ void $ flip runStateT HM.empty $ do
     forever $ do
       conns <- S.get
-      liftIO $ putStrLn $ "conns = " ++ show conns
       (conns',diff) <-
         liftIO $ atomically $ do
           SocketPool conns' <- readTVar pool
@@ -157,8 +156,6 @@ gateway = do
           if HM.null diff
             then retry
             else pure (conns',diff)
-      liftIO $ putStrLn $ "conns' =  " ++ show conns'
-      liftIO $ putStrLn $ "diff = " ++ show diff
       S.put conns'
       for_ diff $ \(sock,_) ->
         liftIO $ forkIO $

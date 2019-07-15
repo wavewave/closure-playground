@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -w #-}
 module Control.Distributed.Playground.MasterSlave where
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (threadDelay,newEmptyMVar,takeMVar)
 import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVar,readTVarIO,retry)
 import Control.Monad (forever,guard,void)
 import Control.Monad.IO.Class (MonadIO(liftIO))
@@ -76,7 +76,7 @@ establishConnection myname (host,port) = do
   pure (sock,sockAddr)
 
 -- | Main request handler in slave
-requestHandler :: M r
+requestHandler :: M ()
 requestHandler = do
   Just (_,rp_req) <- newChanWithId reqChanId
   forever $ do
@@ -131,12 +131,13 @@ slave node hostName serviceName = do
             -- TIO.putStrLn $ "Connected client is " <> unNodeName name <> ". Start process!"
             runManaged node ref_pool $ do
               void $ forkIO $ peerNetworkHandler
-              requestHandler
+              void $ requestHandler
           else do
             insertIntoPool ref_pool name (sock,addr)
-            forever $ do
-              bs <- recvMsg sock
-              print bs
+            -- for idling
+            v <- newEmptyMVar
+            () <- takeMVar v
+            pure ()
             -- TIO.putStrLn $ "added connected client: " <> unNodeName name
       Nothing -> error "should not happen"
 

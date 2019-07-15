@@ -121,8 +121,7 @@ testAction3 rpp = do
   rp2p <- createP2P rpp
   logText $ "receive p2p port is created"
   result <- receiveChan (rp2pPort rp2p)
-  logText $ "received from p2p"
-  logText $ T.pack (show result)
+  logText $ "received from p2p: " <> T.pack (show result)
 
 -- NOTE: `() -> M ()` cause the following error:
 -- "Network.Socket.recvBuf: invalid argument (non-positive length)"
@@ -162,7 +161,7 @@ process =
     r1' <- wait a1'
     r3' <- wait a3'
 
-    liftIO $ threadDelay 5000000
+    -- liftIO $ threadDelay 5000000
     logText "finished"
     pure ()
 
