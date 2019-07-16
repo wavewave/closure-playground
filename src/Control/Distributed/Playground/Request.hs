@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 module Control.Distributed.Playground.Request where
 
 import Control.Distributed.Closure ( Closure

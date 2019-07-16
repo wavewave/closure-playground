@@ -5,10 +5,9 @@
 {-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeApplications   #-}
 
-{-# OPTIONS_GHC -w #-}
 module Control.Distributed.Playground.MasterSlave where
 
-import Control.Concurrent (threadDelay,newEmptyMVar,takeMVar)
+import Control.Concurrent (newEmptyMVar,takeMVar)
 import Control.Concurrent.STM (TVar,atomically,modifyTVar',newTVarIO,readTVar,readTVarIO,retry)
 import Control.Monad (forever,guard,void)
 import Control.Monad.IO.Class (MonadIO(liftIO))
@@ -18,7 +17,6 @@ import Data.Binary (Binary)
 import Data.Foldable (for_,traverse_)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Data.Traversable (traverse)
 import GHC.Generics (Generic)
 import Network.Simple.TCP ( HostPreference(Host)
@@ -52,7 +50,6 @@ import Control.Distributed.Playground.Comm    ( M
                                               )
 import Control.Distributed.Playground.P2P     ( SendP2PProto(..)
                                               , SendP2P(..)
-                                              , P2PChanInfo
                                               , P2PBrokerRequest(..)
                                               )
 import Control.Distributed.Playground.Request ( Request(..)
