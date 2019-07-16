@@ -4,7 +4,7 @@
 {-# LANGUAGE StaticPointers    #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans -w #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Test where
 
 import Control.Concurrent (threadDelay)
@@ -166,17 +166,17 @@ relayer fromPrevP toNextP = do
 
 clsr_initPass :: SendP2PProto Int -> Closure (() -> M Int)
 clsr_initPass toNextP =
-  static (\(SProtoInt toNextP) () -> initPass toNextP >> pure 0)
+  static (\(SProtoInt sp) () -> initPass sp >> pure 0)
   `staticMap` cpure closureDict (SProtoInt toNextP)
 
 clsr_finalPass :: RecvP2PProto Int -> Closure (() -> M Int)
 clsr_finalPass fromPrevP =
-  static (\(RProtoInt fromPrevP) () -> finalPass fromPrevP)
+  static (\(RProtoInt rp) () -> finalPass rp)
   `staticMap` cpure closureDict (RProtoInt fromPrevP)
 
 clsr_relayer :: RecvP2PProto Int -> SendP2PProto Int -> Closure (() -> M Int)
 clsr_relayer fromPrevP toNextP =
-  static (\(RProtoInt fromPrevP) (SProtoInt toNextP) () -> relayer fromPrevP toNextP >> pure 0)
+  static (\(RProtoInt rp) (SProtoInt sp) () -> relayer rp sp >> pure 0)
   `staticMap` cpure closureDict (RProtoInt fromPrevP)
   `staticMap` cpure closureDict (SProtoInt toNextP)
 

@@ -5,10 +5,9 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
+
 module Control.Distributed.Playground.Comm where
 
--- import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( TChan
                               , TVar
                               , atomically
