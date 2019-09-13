@@ -15,11 +15,9 @@ import Control.Distributed.Closure    ( Closure
                                       , closure
                                       , closureDict
                                       )
--- import Control.Distributed.Closure.TH ( withStatic )
 import Control.Monad                  ( replicateM )
 import Control.Monad.IO.Class         ( liftIO )
 import Data.Binary                    ( Binary, Get, get )
--- import Data.Constraint                ( Dict )
 import Data.Foldable                  ( traverse_ )
 import Data.Functor.Static            ( staticMap )
 import qualified Data.HashMap.Strict as HM
@@ -90,14 +88,6 @@ instance Static (Typeable RProtoInt) where
     where
       f :: Dict (Typeable RProtoInt)
       f = Dict
-
-
-{-
-withStatic [d|
-  instance Binary RProtoInt
-  instance Typeable RProtoInt
-  |]
--}
 
 testAction :: M ()
 testAction = do
