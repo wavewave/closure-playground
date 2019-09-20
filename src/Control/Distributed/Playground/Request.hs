@@ -16,7 +16,6 @@ import Control.Distributed.Closure ( Closure
 import Data.Binary (Binary(get,put))
 import Data.Binary.Get (Get)
 import Data.Binary.Put (Put)
-import qualified Data.Text as T
 import Data.Traversable (for)
 import Data.Typeable (Typeable)
 import Data.Word (Word32)
@@ -31,7 +30,6 @@ import Control.Distributed.Playground.Comm ( M
                                            , receiveChan
                                            , sendChan
                                            , newChan
-                                           , logText
                                            )
 
 
@@ -59,7 +57,7 @@ instance (Serializable a, Serializable b) => Binary (Request a b)
 --      http://neilmitchell.blogspot.com/2017/09/existential-serialisation.html
 -- | existential request type
 data SomeRequest =
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b))
   => SomeRequest (Request a b)
 
 class StaticSomeRequest a where
@@ -94,7 +92,7 @@ handleRequest (MRequest cl _ _) input =
 
 
 processRequest ::
-     (Serializable a, Serializable b, Show a, Show b)
+     (Serializable a, Serializable b)
   => SPort SomeRequest
   -> SomeRequest
   -> RPort (SPort (Maybe a))
@@ -103,20 +101,18 @@ processRequest ::
   -> M [b]
 processRequest sp_req sreq rp_sp rp_ans inputs = do
   sendChan sp_req sreq
-  logText $ "receiving sp_input"
   sp_input <- receiveChan rp_sp
   rs <-
     for inputs $ \input -> do
       sendChan sp_input (Just input)
       ans <- receiveChan rp_ans
-      logText $ "get answer = " <> T.pack (show ans)
       pure ans
   sendChan sp_input Nothing
   pure rs
 
 
 callRequest ::
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b))
   => SPort SomeRequest -> Closure (a -> b) -> [a] -> M [b]
 callRequest sp_req clsr inputs = do
   (sp_ans,rp_ans) <- newChan @b
@@ -126,7 +122,7 @@ callRequest sp_req clsr inputs = do
 
 
 callRequestM ::
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b))
   => SPort SomeRequest -> Closure (a -> M b) -> [a] -> M [b]
 callRequestM sp_req clsr inputs = do
   (sp_ans,rp_ans) <- newChan @b
@@ -136,7 +132,7 @@ callRequestM sp_req clsr inputs = do
 
 
 requestTo ::
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b))
   => NodeName -> Closure (a -> b) -> [a] -> M [b]
 requestTo node clsr inputs =
   let sp_req = SPort node reqChanId
@@ -144,7 +140,7 @@ requestTo node clsr inputs =
 
 
 requestToM ::
-     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
+     forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b))
   => NodeName -> Closure (a -> M b) -> [a] -> M [b]
 requestToM node clsr inputs =
   let sp_req = SPort node reqChanId
