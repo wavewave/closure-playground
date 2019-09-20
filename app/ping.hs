@@ -5,7 +5,6 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StaticPointers            #-}
 
--- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
 module Main where
 
 import Control.Concurrent             ( threadDelay )
@@ -26,7 +25,6 @@ import Data.Functor.Static            ( staticMap )
 import qualified Data.List as L
 import qualified Data.Text as T
 import Data.Typeable                  ( Typeable )
-import GHC.Generics                   ( Generic )
 import GHC.StaticPtr                  ( StaticPtr )
 import Network.Simple.TCP             ( type HostName, type ServiceName )
 import System.Environment             ( getArgs )
@@ -53,55 +51,45 @@ instance StaticSomeRequest (Request Int String) where
   staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request Int String)))
 
 
--- | A wrapper around 'Int' used to fulfill the 'Serializable' constraint,
--- so that it can be packed into a 'Closure'.
-newtype SerializableInt = SI Int deriving (Generic, Typeable)
-
-
-instance Binary SerializableInt
-
-instance Static (Binary SerializableInt) where
-  closureDict = closure (static f :: StaticPtr (Dict (Binary SerializableInt)))
+instance Static (Binary Int) where
+  closureDict = closure (static f :: StaticPtr (Dict (Binary Int)))
     where
-      f :: Dict (Binary SerializableInt)
+      f :: Dict (Binary Int)
       f = Dict
 
-instance Static (Typeable SerializableInt) where
-  closureDict = closure (static f :: StaticPtr (Dict (Typeable SerializableInt)))
+instance Static (Typeable Int) where
+  closureDict = closure (static f :: StaticPtr (Dict (Typeable Int)))
     where
-      f :: Dict (Typeable SerializableInt)
+      f :: Dict (Typeable Int)
       f = Dict
 
 
 mkclosure1 :: M (Closure (Int -> Int))
 mkclosure1 = do
-  h <- lift $ randomIO
-  let hidden = SI h
-      c = static (\(SI a) b -> a + b)
+  hidden :: Int <- lift $ randomIO
+  let c = static (\a b -> a + b)
           `staticMap` cpure closureDict hidden
-  logText $ "sending req with hidden: " <> T.pack (show h)
+  logText $ "sending req with hidden: " <> T.pack (show hidden)
   pure c
 
 mkclosure2 :: M (Closure (Int -> String))
 mkclosure2 = do
-  h <- lift $ randomIO
-  let hidden = SI h
-      c = static (\(SI a) b -> show a ++ ":" ++ show b)
+  hidden :: Int <- lift $ randomIO
+  let c = static (\a b -> show a ++ ":" ++ show b)
           `staticMap` cpure closureDict hidden
-  logText $ "sending req with hidden: " <> T.pack (show h)
+  logText $ "sending req with hidden: " <> T.pack (show hidden)
   pure c
 
 -- test for sending arbitrary IO action
 mkclosure3 :: M (Closure (Int -> M String))
 mkclosure3 = do
-  h <- lift $ randomIO
-  let hidden = SI h
-      c = static (\(SI a) b -> do let x = show a ++ ":" ++ show b
-                                  logText ("nuclear missile launched with " <> T.pack (show x))
-                                  pure x
+  hidden :: Int <- lift $ randomIO
+  let c = static (\a b -> do let x = show a ++ ":" ++ show b
+                             logText ("nuclear missile launched with " <> T.pack (show x))
+                             pure x
                  )
           `staticMap` cpure closureDict hidden
-  logText $ "sending req with hidden: " <> T.pack (show h)
+  logText $ "sending req with hidden: " <> T.pack (show hidden)
   pure c
 
 
@@ -109,8 +97,7 @@ mkclosure3 = do
 mkclosure4 :: M (Closure (Int -> M String))
 mkclosure4 = do
   let func x = x + 10
-  let -- hidden = SI h
-      c1 = closure $ static \(f :: Int->Int) (b :: Int) -> do
+  let c1 = closure $ static \(f :: Int->Int) (b :: Int) -> do
                                let x = show (f 1) ++ ":" ++ show b
                                logText ("nuclear missile launched with " <> T.pack (show x))
                                pure (x :: String)
@@ -126,7 +113,7 @@ mkclosure5 = do
                                let x = show (f 1) ++ ":" ++ show b
                                logText ("nuclear missile launched with " <> T.pack (show x))
                                pure (x :: String)
-      f1 = closure (static (\(SI h') x -> x + h')) `cap` cpure closureDict (SI h)
+      f1 = closure (static (\h' x -> x + h')) `cap` cpure closureDict h
       clsr = c1 `cap` f1
   pure clsr
 

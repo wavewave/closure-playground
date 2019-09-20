@@ -92,6 +92,7 @@ handleRequest (MRequest cl _ _) input =
   let action = unclosure cl
   in action input
 
+
 processRequest ::
      (Serializable a, Serializable b, Show a, Show b)
   => SPort SomeRequest
@@ -113,6 +114,7 @@ processRequest sp_req sreq rp_sp rp_ans inputs = do
   sendChan sp_input Nothing
   pure rs
 
+
 callRequest ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
   => SPort SomeRequest -> Closure (a -> b) -> [a] -> M [b]
@@ -121,6 +123,7 @@ callRequest sp_req clsr inputs = do
   (sp_sp,rp_sp) <- newChan @(SPort (Maybe a))
   let req = PureRequest clsr sp_sp sp_ans
   processRequest sp_req (SomeRequest req) rp_sp rp_ans inputs
+
 
 callRequestM ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
@@ -138,6 +141,7 @@ requestTo ::
 requestTo node clsr inputs =
   let sp_req = SPort node reqChanId
   in callRequest sp_req clsr inputs
+
 
 requestToM ::
      forall a b. (Serializable a, Serializable b, StaticSomeRequest (Request a b), Show a, Show b)
