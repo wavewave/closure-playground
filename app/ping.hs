@@ -4,28 +4,34 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StaticPointers            #-}
-{-# LANGUAGE TemplateHaskell           #-}
 
 -- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns -fno-warn-orphans #-}
 module Main where
 
-import Control.Concurrent (threadDelay)
-import Control.Distributed.Closure (Closure, cap, cpure, closure, closureDict)
-import Control.Distributed.Closure.TH (withStatic)
-import Control.Monad (replicateM)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Class (lift)
-import Data.Binary (Binary(get))
-import Data.Binary.Get (Get)
-import Data.Functor.Static (staticMap)
+import Control.Concurrent             ( threadDelay )
+import Control.Distributed.Closure    ( Closure
+                                      , Dict(Dict)
+                                      , Static
+                                      , cap
+                                      , cpure
+                                      , closure
+                                      , closureDict
+                                      )
+import Control.Monad                  ( replicateM )
+import Control.Monad.IO.Class         ( liftIO )
+import Control.Monad.Trans.Class      ( lift )
+import Data.Binary                    ( Binary(get) )
+import Data.Binary.Get                ( Get )
+import Data.Functor.Static            ( staticMap )
 import qualified Data.List as L
 import qualified Data.Text as T
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
-import Network.Simple.TCP (type HostName, type ServiceName)
-import System.Environment (getArgs)
-import System.Random (randomIO,randomRIO)
-import UnliftIO.Async (async,wait)
+import Data.Typeable                  ( Typeable )
+import GHC.Generics                   ( Generic )
+import GHC.StaticPtr                  ( StaticPtr )
+import Network.Simple.TCP             ( type HostName, type ServiceName )
+import System.Environment             ( getArgs )
+import System.Random                  ( randomIO, randomRIO )
+import UnliftIO.Async                 ( async, wait )
 --
 import Control.Distributed.Playground.Comm ( M
                                            , NodeName(..)
@@ -50,10 +56,22 @@ instance StaticSomeRequest (Request Int String) where
 -- | A wrapper around 'Int' used to fulfill the 'Serializable' constraint,
 -- so that it can be packed into a 'Closure'.
 newtype SerializableInt = SI Int deriving (Generic, Typeable)
-withStatic [d|
-  instance Binary SerializableInt
-  instance Typeable SerializableInt
-  |]
+
+
+instance Binary SerializableInt
+
+instance Static (Binary SerializableInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Binary SerializableInt)))
+    where
+      f :: Dict (Binary SerializableInt)
+      f = Dict
+
+instance Static (Typeable SerializableInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Typeable SerializableInt)))
+    where
+      f :: Dict (Typeable SerializableInt)
+      f = Dict
+
 
 mkclosure1 :: M (Closure (Int -> Int))
 mkclosure1 = do

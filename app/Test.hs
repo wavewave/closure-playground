@@ -2,25 +2,30 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StaticPointers    #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Test where
 
-import Control.Concurrent (threadDelay)
-import Control.Distributed.Closure (Closure,cpure,closureDict)
-import Control.Distributed.Closure.TH (withStatic)
-import Control.Monad (replicateM)
-import Control.Monad.IO.Class (liftIO)
-import Data.Binary (Binary, Get, get )
-import Data.Foldable (traverse_)
-import Data.Functor.Static (staticMap)
+import Control.Concurrent             ( threadDelay )
+import Control.Distributed.Closure    ( Closure
+                                      , Dict(..)
+                                      , Static(..)
+                                      , cpure
+                                      , closure
+                                      , closureDict
+                                      )
+import Control.Monad                  ( replicateM )
+import Control.Monad.IO.Class         ( liftIO )
+import Data.Binary                    ( Binary, Get, get )
+import Data.Foldable                  ( traverse_ )
+import Data.Functor.Static            ( staticMap )
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import Data.Traversable (for)
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
-import UnliftIO.Async (async,wait)
+import Data.Traversable               ( for )
+import Data.Typeable                  ( Typeable )
+import GHC.Generics                   ( Generic )
+import GHC.StaticPtr                  ( StaticPtr )
+import UnliftIO.Async                 ( async, wait )
 --
 import Control.Distributed.Playground.Comm    ( M
                                               , NodeName(..)
@@ -51,19 +56,37 @@ instance StaticSomeRequest (Request () Int) where
 newtype SProtoInt = SProtoInt (SendP2PProto Int)
                   deriving (Generic, Typeable)
 
-withStatic [d|
-  instance Binary SProtoInt
-  instance Typeable SProtoInt
-  |]
+instance Binary SProtoInt
+
+instance Static (Binary SProtoInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Binary SProtoInt)))
+    where
+      f :: Dict (Binary SProtoInt)
+      f = Dict
+
+instance Static (Typeable SProtoInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Typeable SProtoInt)))
+    where
+      f :: Dict (Typeable SProtoInt)
+      f = Dict
+
 
 newtype RProtoInt = RProtoInt (RecvP2PProto Int)
                   deriving (Generic, Typeable)
 
-withStatic [d|
-  instance Binary RProtoInt
-  instance Typeable RProtoInt
-  |]
+instance Binary RProtoInt
 
+instance Static (Binary RProtoInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Binary RProtoInt)))
+    where
+      f :: Dict (Binary RProtoInt)
+      f = Dict
+
+instance Static (Typeable RProtoInt) where
+  closureDict = closure (static f :: StaticPtr (Dict (Typeable RProtoInt)))
+    where
+      f :: Dict (Typeable RProtoInt)
+      f = Dict
 
 testAction :: M ()
 testAction = do
