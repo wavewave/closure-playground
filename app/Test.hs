@@ -49,6 +49,9 @@ import Control.Distributed.Playground.Request ( Request
                                               , requestToM
                                               )
 
+instance StaticSomeRequest (Request () ()) where
+  staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request () ())))
+
 instance StaticSomeRequest (Request () Int) where
   staticSomeRequest _ = static (SomeRequest <$> (get :: Get (Request () Int)))
 
@@ -113,20 +116,17 @@ testAction3 rpp = do
   result <- receiveChan (rp2pPort rp2p)
   logText $ "received from p2p: " <> T.pack (show result)
 
--- NOTE: `() -> M ()` cause the following error:
--- "Network.Socket.recvBuf: invalid argument (non-positive length)"
--- TODO: investigate this.
-closure1 :: Closure (() -> M Int)
-closure1 = static (\() -> testAction >> pure 0)
+closure1 :: Closure (() -> M ())
+closure1 = static (\() -> testAction)
 
-closure2 :: SendP2PProto Int -> Closure (() -> M Int)
+closure2 :: SendP2PProto Int -> Closure (() -> M ())
 closure2 sp2p =
-  static (\(SProtoInt sp) () -> testAction2 sp >> pure 0)
+  static (\(SProtoInt sp) () -> testAction2 sp)
   `staticMap` cpure closureDict (SProtoInt sp2p)
 
-closure3 :: RecvP2PProto Int -> Closure (() -> M Int)
+closure3 :: RecvP2PProto Int -> Closure (() -> M ())
 closure3 rp2p = do
-  static (\(RProtoInt rp) () -> testAction3 rp >> pure 0)
+  static (\(RProtoInt rp) () -> testAction3 rp)
   `staticMap` cpure closureDict (RProtoInt rp2p)
 
 
@@ -166,7 +166,7 @@ initPass toNextP = do
   toNext <- getSendP2P toNextP
   let baton = 0
   logText $ "start a baton with value: " <> T.pack (show baton)
-  sendChan (sp2pPort toNext)  baton
+  sendChan (sp2pPort toNext) baton
 
 finalPass :: RecvP2PProto Int -> M Int
 finalPass fromPrevP = do
@@ -187,9 +187,9 @@ relayer fromPrevP toNextP = do
   sendChan (sp2pPort toNext) (baton+1)
 
 
-clsr_initPass :: SendP2PProto Int -> Closure (() -> M Int)
+clsr_initPass :: SendP2PProto Int -> Closure (() -> M ())
 clsr_initPass toNextP =
-  static (\(SProtoInt sp) () -> initPass sp >> pure 0)
+  static (\(SProtoInt sp) () -> initPass sp)
   `staticMap` cpure closureDict (SProtoInt toNextP)
 
 clsr_finalPass :: RecvP2PProto Int -> Closure (() -> M Int)
@@ -197,11 +197,23 @@ clsr_finalPass fromPrevP =
   static (\(RProtoInt rp) () -> finalPass rp)
   `staticMap` cpure closureDict (RProtoInt fromPrevP)
 
-clsr_relayer :: RecvP2PProto Int -> SendP2PProto Int -> Closure (() -> M Int)
+clsr_relayer :: RecvP2PProto Int -> SendP2PProto Int -> Closure (() -> M ())
 clsr_relayer fromPrevP toNextP =
-  static (\(RProtoInt rp) (SProtoInt sp) () -> relayer rp sp >> pure 0)
+  static (\(RProtoInt rp) (SProtoInt sp) () -> relayer rp sp)
   `staticMap` cpure closureDict (RProtoInt fromPrevP)
   `staticMap` cpure closureDict (SProtoInt toNextP)
+
+numPlayer :: Int
+numPlayer = 4
+
+nthSlave :: Int -> NodeName
+nthSlave n = NodeName $ "slave" <> (T.pack (show n))
+
+initSlave :: NodeName
+initSlave = nthSlave 0
+
+lastSlave :: NodeName
+lastSlave = nthSlave numPlayer
 
 
 -- | relaying test
@@ -209,18 +221,18 @@ relay :: M ()
 relay = do
   liftIO $ threadDelay 1000000
 
-  chs <- replicateM 4 newP2P
+  chs <- replicateM numPlayer newP2P
   let sps = map fst chs -- send ports
       rps = map snd chs -- receive ports
       sp0 = head sps
       rpn = last rps
   let pairs = zip rps (tail sps)  -- (r_i,s_(i+1))
-      nodes = map NodeName ["slave1","slave2","slave3"]
+      nodes = map nthSlave [1..numPlayer-1]
   as <- for (zip pairs nodes) $ \((rpp,spp),node) -> do
           a <- async $ requestToM node (clsr_relayer rpp spp) [()]
           pure a
-  a0 <- async $ requestToM (NodeName "slave0") (clsr_initPass sp0) [()]
-  an <- async $ requestToM (NodeName "slave4") (clsr_finalPass rpn) [()]
+  a0 <- async $ requestToM initSlave (clsr_initPass sp0) [()]
+  an <- async $ requestToM lastSlave (clsr_finalPass rpn) [()]
 
   _ <- wait a0
   traverse_ wait as

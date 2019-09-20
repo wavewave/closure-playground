@@ -21,7 +21,7 @@ import Control.Concurrent.STM ( TChan
                               , writeTChan
                               )
 import Control.Concurrent.STM.TQueue (TQueue,newTQueueIO,readTQueue,writeTQueue)
-import Control.Monad (forever, void)
+import Control.Monad ( forever, void, when )
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (whileJust_)
 import Control.Monad.Trans.Class (lift)
@@ -29,7 +29,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.Reader (ReaderT(runReaderT),ask)
 import Control.Monad.Trans.State (runStateT)
 import qualified Control.Monad.Trans.State as S
-import Data.Binary (Binary(get,put), decode, encode)
+import Data.Binary (Binary, decode, encode)
 import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
@@ -47,12 +47,6 @@ import Data.Word (Word32)
 import GHC.Generics (Generic)
 import Network.Simple.TCP (Socket, SockAddr, recv, send)
 import UnliftIO.Concurrent (forkIO)
-
-data BinProxy a = BinProxy
-
-instance Binary (BinProxy a) where
-  put BinProxy = mempty
-  get          = pure BinProxy
 
 -------------
 -- Message --
@@ -78,14 +72,22 @@ recvMsg sock =
   runMaybeT $ do
     !bs <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs)
-    !bs' <- MaybeT $ recv sock (fromIntegral sz)
-    pure $! Msg sz bs'
+    if sz > 0
+      then do
+        !bs' <- MaybeT $ recv sock (fromIntegral sz)
+        pure $! Msg sz bs'
+      else
+        -- Zero length message should be treated specially.
+        -- Otherwise, the following error happens.
+        -- "Network.Socket.recvBuf: invalid argument (non-positive length)"
+        pure $! Msg sz ""
 
 sendMsg :: Socket -> Msg -> IO ()
 sendMsg sock (Msg sz pl) = do
   let !lbs = runPut (putWord32le sz)
   send sock (BL.toStrict lbs)
-  send sock pl
+  when (sz > 0) $
+    send sock pl
 
 -- | message with target id
 data IMsg = IMsg { imsgReceiver :: !Word32
@@ -100,8 +102,15 @@ recvIMsg sock = do
     let i = runGet getWord32le (BL.fromStrict bs1)
     !bs2 <- MaybeT $ recv sock 4
     let sz = runGet getWord32le (BL.fromStrict bs2)
-    !payload <- MaybeT $ recv sock (fromIntegral sz)
-    pure $! IMsg i (Msg sz payload)
+    if sz > 0
+      then do
+        !payload <- MaybeT $ recv sock (fromIntegral sz)
+        pure $! IMsg i (Msg sz payload)
+      else
+        -- Zero length message should be treated specially.
+        -- Otherwise, the following error happens.
+        -- "Network.Socket.recvBuf: invalid argument (non-positive length)"
+        pure $! IMsg i (Msg sz "")
 
 
 sendIMsg :: Socket -> IMsg -> IO ()
@@ -110,7 +119,8 @@ sendIMsg sock (IMsg i (Msg sz pl)) = do
   send sock (BL.toStrict lb_i)
   let !lb_sz = runPut (putWord32le sz)
   send sock (BL.toStrict lb_sz)
-  send sock pl
+  when (sz > 0) $
+    send sock pl
 
 -------------
 -- Managed --
