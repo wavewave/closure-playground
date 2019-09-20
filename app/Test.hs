@@ -115,7 +115,9 @@ testAction3 rpp = do
 
 -- NOTE: `() -> M ()` cause the following error:
 -- "Network.Socket.recvBuf: invalid argument (non-positive length)"
--- TODO: investigate this.
+-- it's due because no data is serialized:
+--  http://hackage.haskell.org/package/binary-0.10.0.0/docs/src/Data.Binary.Class.html#line-183
+-- TODO: handle 0-byte serialization as a special case.
 closure1 :: Closure (() -> M Int)
 closure1 = static (\() -> testAction >> pure 0)
 

@@ -29,7 +29,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.Reader (ReaderT(runReaderT),ask)
 import Control.Monad.Trans.State (runStateT)
 import qualified Control.Monad.Trans.State as S
-import Data.Binary (Binary(get,put), decode, encode)
+import Data.Binary (Binary, decode, encode)
 import Data.Binary.Get (getWord32le,runGet)
 import Data.Binary.Put (putWord32le,runPut)
 import qualified Data.ByteString as B
@@ -47,12 +47,6 @@ import Data.Word (Word32)
 import GHC.Generics (Generic)
 import Network.Simple.TCP (Socket, SockAddr, recv, send)
 import UnliftIO.Concurrent (forkIO)
-
-data BinProxy a = BinProxy
-
-instance Binary (BinProxy a) where
-  put BinProxy = mempty
-  get          = pure BinProxy
 
 -------------
 -- Message --
