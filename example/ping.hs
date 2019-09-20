@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StaticPointers        #-}
-{-# LANGUAGE TemplateHaskell       #-}
+-- {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 
 -- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
@@ -16,12 +16,15 @@ module Main where
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically, readTVar, writeTVar, newTChan, readTChan)
 import Control.Distributed.Closure ( Closure
+                                   , Dict (..)
                                    , Serializable
+                                   , Static(..)
                                    , cpure
+                                   , closure
                                    , closureDict
                                    , unclosure
                                    )
-import Control.Distributed.Closure.TH (withStatic)
+-- import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
@@ -32,6 +35,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import GHC.StaticPtr (StaticPtr)
 import Network.Simple.TCP ( HostPreference(Host)
                           , connect
                           , serve
@@ -69,14 +73,28 @@ handleRequest (Request cl input _) =
   let fun = unclosure cl
   in pure $ fun input
 
+instance Static (Binary Int) where
+  closureDict = closure (static f :: StaticPtr (Dict (Binary Int)))
+    where
+      f :: Dict (Binary Int)
+      f = Dict
 
--- | A wrapper around 'Int' used to fulfill the 'Serializable' constraint,
--- so that it can be packed into a 'Closure'.
-newtype SerializableInt = SI Int deriving (Generic, Typeable)
+instance Static (Typeable Int) where
+  closureDict = closure (static f :: StaticPtr (Dict (Typeable Int)))
+    where
+      f :: Dict (Typeable Int)
+      f = Dict
+
+{-
+
+-- if we use template haskell utility
+
 withStatic [d|
-  instance Binary SerializableInt
-  instance Typeable SerializableInt
+  instance Binary Int
+  instance Typeable Int
   |]
+-}
+
 
 slave :: IO ()
 slave = do
@@ -101,14 +119,13 @@ master = do
 
       replicateM_ 5 $ do
         (sp_ans,rp_ans) <- newChan @Int
-        h <- lift $ randomIO
-        let hidden = SI h
-            c = static (\(SI a) b -> a + b)
+        hidden :: Int <- lift $ randomIO
+        let c = static (\a b -> a + b)
               `staticMap` cpure closureDict hidden
             req = Request c (4::Int) sp_ans
 
         let sp = SPort 0
-        logText $ "sending req with hidden: " <> T.pack (show h)
+        logText $ "sending req with hidden: " <> T.pack (show hidden)
         sendChan sp req
         ans <- receiveChan rp_ans
         logText $ "get answer = " <> T.pack (show ans)
