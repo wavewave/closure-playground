@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StaticPointers    #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans -ddump-splices #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Test where
 
 import Control.Concurrent             ( threadDelay )
