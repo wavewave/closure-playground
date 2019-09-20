@@ -7,10 +7,8 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StaticPointers        #-}
--- {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 
--- {-# OPTIONS_GHC -Wall -Werror -fno-warn-incomplete-patterns #-}
 module Main where
 
 import Control.Concurrent (threadDelay)
@@ -19,12 +17,12 @@ import Control.Distributed.Closure ( Closure
                                    , Dict (..)
                                    , Serializable
                                    , Static(..)
+                                   , cap
                                    , cpure
                                    , closure
                                    , closureDict
                                    , unclosure
                                    )
--- import Control.Distributed.Closure.TH (withStatic)
 import Control.Monad (forever, replicateM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
@@ -120,8 +118,9 @@ master = do
       replicateM_ 5 $ do
         (sp_ans,rp_ans) <- newChan @Int
         hidden :: Int <- lift $ randomIO
-        let c = static (\a b -> a + b)
-              `staticMap` cpure closureDict hidden
+        let c = closure (static (\a b -> a + b))
+                `cap`
+                cpure closureDict hidden
             req = Request c (4::Int) sp_ans
 
         let sp = SPort 0
